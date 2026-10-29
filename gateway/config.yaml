@@ -1,3 +1,7 @@
 server:
   host: 0.0.0.0
   port: "8000"
+
+backends:
+  - http://vllm-worker-0:8000
+  - http://vllm-worker-1:8000
