@@ -6,6 +6,8 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 
 	"github.com/ogrodowskijedrzej/inference-lab/internal/backend"
 	"github.com/ogrodowskijedrzej/inference-lab/internal/config"
@@ -33,19 +35,18 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 
 func inputHandler(balancer *loadbalancer.RoundRobin) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var req ChatCompletionRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			log.Printf("failed to decode json: %v", err)
-			http.Error(w, "failed", http.StatusBadRequest)
-			return
-		}
 		backendURL, err := balancer.Next()
 		if err != nil {
 			http.Error(w, "no backends available", http.StatusServiceUnavailable)
 			return
 		}
-		log.Printf("routing request for model %q to %s", req.Model, backendURL)
-		// todo further request
+
+		target, err := url.Parse(backendURL)
+		if err != nil {
+			http.Error(w, "no backends available", http.StatusServiceUnavailable)
+			return
+		}
+		httputil.NewSingleHostReverseProxy(target).ServeHTTP(w, r)
 	}
 }
 
