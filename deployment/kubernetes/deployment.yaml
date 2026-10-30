@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mock-vllm
+  namespace: inference
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: mock-vllm
+  template:
+    metadata:
+      labels:
+        app: mock-vllm
+    spec:
+      containers:
+        - name: worker
+          image: mock-vllm:v0.1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
