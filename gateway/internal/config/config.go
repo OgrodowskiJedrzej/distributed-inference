@@ -27,5 +27,9 @@ func Load() (Config, error) {
 		return Config{}, err
 	}
 
+	if upstream := os.Getenv("UPSTREAM_URL"); upstream != "" {
+		config.Upstream = upstream
+	}
+
 	return config, nil
 }

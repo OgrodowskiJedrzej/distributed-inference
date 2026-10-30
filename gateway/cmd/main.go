@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -12,17 +11,6 @@ import (
 	"github.com/ogrodowskijedrzej/inference-lab/internal/api"
 	"github.com/ogrodowskijedrzej/inference-lab/internal/config"
 )
-
-type healthResponse struct {
-	Message string `json:"message"`
-}
-
-func healthHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(healthResponse{Message: "Healthy"}); err != nil {
-		log.Printf("failed to encode json: %v", err)
-	}
-}
 
 func run() error {
 	cfg, err := config.Load()
@@ -37,7 +25,7 @@ func run() error {
 
 	address := net.JoinHostPort(cfg.Server.Host, cfg.Server.Port)
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", healthHandler)
+	mux.HandleFunc("GET /healthz", api.HealthHandler)
 	mux.Handle("POST /v1/chat/completions", api.NewChatCompletionsHandler(upstream))
 
 	server := &http.Server{
