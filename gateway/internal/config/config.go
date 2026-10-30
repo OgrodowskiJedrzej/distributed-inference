@@ -13,7 +13,7 @@ type ServerConfig struct {
 
 type Config struct {
 	Server   ServerConfig `yaml:"server"`
-	Backends []string     `yaml:"backends"`
+	Upstream string       `yaml:"upstream"`
 }
 
 func Load() (Config, error) {
