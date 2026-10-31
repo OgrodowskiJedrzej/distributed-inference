@@ -19,11 +19,23 @@ spec:
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
+          startupProbe:
+            exec:
+              command:
+                - python3
+                - /opt/probes/startup_probe.py
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 36
           readinessProbe:
             httpGet:
               path: /health
               port: 8000
             periodSeconds: 5
+            timeoutSeconds: 3
+            successThreshold: 1
+            failureThreshold: 3
           resources:
             requests:
               cpu: 100m
@@ -31,3 +43,11 @@ spec:
             limits:
               cpu: 500m
               memory: 256Mi
+          volumeMounts:
+            - name: worker-probes
+              mountPath: /opt/probes
+              readOnly: true
+      volumes:
+        - name: worker-probes
+          configMap:
+            name: worker-probes
