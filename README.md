@@ -57,3 +57,17 @@ curl http://127.0.0.1:8000/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{"model":"mock-qwen","messages":[{"role":"user","content":"Hello"}]}'
 ```
+
+Run the end-to-end smoke test against the deployed stack:
+
+```sh
+./tests/e2e/pipeline.sh
+```
+
+The test checks the three Kubernetes rollouts, opens a temporary port-forward,
+and validates chat completion responses passing through the gateway, router,
+and mock workers. To additionally require traffic to reach at least two workers:
+
+```sh
+E2E_REQUESTS=10 E2E_MIN_WORKERS=2 ./tests/e2e/pipeline.sh
+```
