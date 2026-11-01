@@ -21,7 +21,8 @@ spec:
             - name: UPSTREAM_URL
               value: http://vllm-router:30000
           ports:
-            - containerPort: 8000
+            - name: http
+              containerPort: 8000
           readinessProbe:
             httpGet:
               path: /healthz

@@ -3,10 +3,13 @@ kind: Service
 metadata:
   name: inference-gateway
   namespace: inference
+  labels:
+    app: inference-gateway
 spec:
   type: ClusterIP
   selector:
     app: inference-gateway
   ports:
-    - port: 8000
-      targetPort: 8000
+    - name: http
+      port: 8000
+      targetPort: http

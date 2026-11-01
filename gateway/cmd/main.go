@@ -10,6 +10,10 @@ import (
 
 	"github.com/ogrodowskijedrzej/inference-lab/internal/api"
 	"github.com/ogrodowskijedrzej/inference-lab/internal/config"
+	"github.com/ogrodowskijedrzej/inference-lab/internal/observability"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func run() error {
@@ -24,9 +28,17 @@ func run() error {
 	}
 
 	address := net.JoinHostPort(cfg.Server.Host, cfg.Server.Port)
+	registry := prometheus.NewRegistry()
+	registry.MustRegister(
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+	)
+	httpMetrics := observability.NewHTTPMetrics(registry)
+
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", api.HealthHandler)
-	mux.Handle("POST /v1/chat/completions", api.NewChatCompletionsHandler(upstream))
+	mux.Handle("GET /healthz", httpMetrics.Instrument("/healthz", http.HandlerFunc(api.HealthHandler)))
+	mux.Handle("POST /v1/chat/completions", httpMetrics.Instrument("/v1/chat/completions", api.NewChatCompletionsHandler(upstream)))
+	mux.Handle("GET /metrics", promhttp.HandlerFor(registry, promhttp.HandlerOpts{}))
 
 	server := &http.Server{
 		Addr:              address,
