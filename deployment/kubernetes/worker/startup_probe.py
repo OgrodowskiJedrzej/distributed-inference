@@ -1,8 +1,10 @@
 import json
+import os
 import urllib.request
 
 
 BASE_URL = "http://127.0.0.1:8000"
+REQUEST_TIMEOUT_SECONDS = float(os.getenv("STARTUP_PROBE_TIMEOUT_SECONDS", "4"))
 
 
 with urllib.request.urlopen(f"{BASE_URL}/v1/models", timeout=2) as response:
@@ -20,6 +22,6 @@ request = urllib.request.Request(
     method="POST",
 )
 
-with urllib.request.urlopen(request, timeout=4) as response:
+with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
     if response.status != 200:
         raise SystemExit(1)

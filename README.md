@@ -44,6 +44,18 @@ kubectl rollout status deployment/vllm-router -n inference
 kubectl rollout status deployment/inference-gateway -n inference
 ```
 
+On an ARM64 development cluster, deploy a real CPU-backed vLLM worker instead
+of the mock workers:
+
+```sh
+kubectl apply -k deployment/overlays/local-vllm-cpu
+kubectl rollout status deployment/mock-vllm -n inference --timeout=15m
+```
+
+This profile runs one `HuggingFaceTB/SmolLM2-135M-Instruct` instance and preserves the
+`mock-qwen` API model name. The first start downloads the model into a persistent
+cache and can take several minutes.
+
 Expose the gateway locally:
 
 ```sh
@@ -66,7 +78,7 @@ Run the end-to-end smoke test against the deployed stack:
 
 The test checks the three Kubernetes rollouts, opens a temporary port-forward,
 and validates chat completion responses passing through the gateway, router,
-and mock workers. To additionally require traffic to reach at least two workers:
+and workers. To additionally require mock traffic to reach at least two workers:
 
 ```sh
 E2E_REQUESTS=10 E2E_MIN_WORKERS=2 ./tests/e2e/pipeline.sh
