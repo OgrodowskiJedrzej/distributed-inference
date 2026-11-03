@@ -20,6 +20,13 @@ spec:
           env:
             - name: UPSTREAM_URL
               value: http://vllm-router:30000
+            - name: REDIS_ADDRESS
+              value: inference-redis-master:6379
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-auth
+                  key: redis-password
           ports:
             - name: http
               containerPort: 8000
