@@ -1,7 +1,9 @@
 package config
 
 import (
+	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -26,10 +28,15 @@ type RateLimitConfig struct {
 	ReservationTTL    time.Duration `yaml:"reservation_ttl"`
 }
 
+type ModelConfig struct {
+	MaxTokens int64 `yaml:"max_tokens"`
+}
+
 type Config struct {
 	Server    ServerConfig    `yaml:"server"`
 	Redis     RedisConfig     `yaml:"redis"`
 	RateLimit RateLimitConfig `yaml:"rate_limit"`
+	Models    map[string]ModelConfig `yaml:"models"`
 	Upstream  string          `yaml:"upstream"`
 }
 
@@ -54,6 +61,18 @@ func Load() (Config, error) {
 
 	if password := os.Getenv("REDIS_PASSWORD"); password != "" {
 		config.Redis.Password = password
+	}
+
+	if len(config.Models) == 0 {
+		return Config{}, fmt.Errorf("models must not be empty")
+	}
+	for name, model := range config.Models {
+		if strings.TrimSpace(name) == "" {
+			return Config{}, fmt.Errorf("model name must not be empty")
+		}
+		if model.MaxTokens <= 0 {
+			return Config{}, fmt.Errorf("model %q max_tokens must be positive", name)
+		}
 	}
 
 	return config, nil

@@ -14,4 +14,8 @@ rate_limit:
   default_max_tokens: 512
   reservation_ttl: 10m
 
+models:
+  mock-qwen:
+    max_tokens: 512
+
 upstream: http://127.0.0.1:8001
