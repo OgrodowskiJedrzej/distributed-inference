@@ -15,7 +15,8 @@ import (
 	"time"
 )
 
-const maxCapturedResponseBytes = 1 << 20
+const maxCapturedResponseBytes = 1 << 20 // 1 MiB
+const maxRequestBodySize = 1 << 20       // 1 MiB
 
 type ReservationLimiter interface {
 	Reserve(context.Context, string, string, int64) (Reservation, error)
@@ -50,8 +51,14 @@ func ModelScope(_ *http.Request, model string) string {
 
 func (m *HTTPMiddleware) Wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodySize)
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
+			var maxBytesError *http.MaxBytesError
+			if errors.As(err, &maxBytesError) {
+				writeAPIError(w, http.StatusRequestEntityTooLarge, "request body too large", "invalid_request_error", "request_too_large")
+				return
+			}
 			writeAPIError(w, http.StatusBadRequest, "invalid request body", "invalid_request_error", "invalid_body")
 			return
 		}

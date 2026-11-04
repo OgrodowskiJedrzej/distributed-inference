@@ -72,6 +72,7 @@ func run() error {
 		Handler:           mux,
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       2 * time.Minute,
+		ReadTimeout:       30 * time.Second,
 	}
 
 	log.Printf("server is running on %s", address)

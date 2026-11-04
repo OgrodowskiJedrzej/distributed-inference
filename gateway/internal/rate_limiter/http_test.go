@@ -2,6 +2,7 @@ package ratelimiter
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -125,6 +126,44 @@ func TestHTTPMiddlewareReturnsServiceUnavailableForRedisError(t *testing.T) {
 
 	if response.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusServiceUnavailable)
+	}
+}
+
+func TestHTTPMiddlewareRejectsOversizedRequestBody(t *testing.T) {
+	limiter := &fakeReservationLimiter{}
+	middleware, err := NewHTTPMiddleware(limiter, 10*time.Minute, 512, ModelScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	called := false
+	handler := middleware.Wrap(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		called = true
+	}))
+	request := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+	request.Body = io.NopCloser(strings.NewReader(strings.Repeat("a", maxRequestBodySize+1)))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	if called {
+		t.Fatal("upstream handler was called")
+	}
+	if response.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusRequestEntityTooLarge)
+	}
+	var payload struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Error.Code != "request_too_large" {
+		t.Fatalf("error code = %q, want request_too_large", payload.Error.Code)
+	}
+	if limiter.reservedTokens != 0 {
+		t.Fatalf("reserved tokens = %d, want 0", limiter.reservedTokens)
 	}
 }
 
