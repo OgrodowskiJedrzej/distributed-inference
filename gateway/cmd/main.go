@@ -52,11 +52,15 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("create rate limiter: %w", err)
 	}
+	modelMaxTokens := make(map[string]int64, len(cfg.Models))
+	for name, model := range cfg.Models {
+		modelMaxTokens[name] = model.MaxTokens
+	}
 	rateLimitMiddleware, err := ratelimiter.NewHTTPMiddleware(
 		limiter,
 		cfg.RateLimit.ReservationTTL,
-		cfg.RateLimit.DefaultMaxTokens,
 		ratelimiter.ModelScope,
+		modelMaxTokens,
 	)
 	if err != nil {
 		return fmt.Errorf("create rate limit middleware: %w", err)

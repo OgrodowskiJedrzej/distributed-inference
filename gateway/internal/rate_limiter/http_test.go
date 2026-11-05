@@ -14,6 +14,7 @@ import (
 
 type fakeReservationLimiter struct {
 	reserveError     error
+	reserveCalls     int
 	reservedScope    string
 	reservedTokens   int64
 	reconciledTokens int64
@@ -21,12 +22,100 @@ type fakeReservationLimiter struct {
 }
 
 func (l *fakeReservationLimiter) Reserve(_ context.Context, scope, requestID string, tokens int64) (Reservation, error) {
+	l.reserveCalls++
 	if l.reserveError != nil {
 		return Reservation{}, l.reserveError
 	}
 	l.reservedScope = scope
 	l.reservedTokens = tokens
 	return Reservation{Scope: scope, ID: requestID, ReservedTokens: tokens}, nil
+}
+
+func TestHTTPMiddlewareRejectsInvalidModelPolicyRequests(t *testing.T) {
+	tests := []struct {
+		name      string
+		body      string
+		errorCode string
+	}{
+		{name: "model not allowed", body: `{"model":"blocked"}`, errorCode: "model_not_allowed"},
+		{name: "max tokens exceeds limit", body: `{"model":"allowed","max_tokens":11}`, errorCode: "max_tokens_exceeded"},
+		{name: "both token fields", body: `{"model":"allowed","max_tokens":10,"max_completion_tokens":9}`, errorCode: "ambiguous_max_tokens"},
+		{name: "zero max tokens", body: `{"model":"allowed","max_tokens":0}`, errorCode: "max_tokens_exceeded"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			limiter := &fakeReservationLimiter{}
+			middleware, err := NewHTTPMiddleware(limiter, 10*time.Minute, ModelScope, map[string]int64{"allowed": 10})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			called := false
+			handler := middleware.Wrap(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+				called = true
+			}))
+			request := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(test.body))
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+
+			if called {
+				t.Fatal("upstream handler was called")
+			}
+			if limiter.reserveCalls != 0 {
+				t.Fatalf("reserve calls = %d, want 0", limiter.reserveCalls)
+			}
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d", response.Code, http.StatusBadRequest)
+			}
+			var payload struct {
+				Error struct {
+					Code string `json:"code"`
+				} `json:"error"`
+			}
+			if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+				t.Fatal(err)
+			}
+			if payload.Error.Code != test.errorCode {
+				t.Fatalf("error code = %q, want %q", payload.Error.Code, test.errorCode)
+			}
+		})
+	}
+}
+
+func TestHTTPMiddlewareUsesModelMaxTokensByDefault(t *testing.T) {
+	limiter := &fakeReservationLimiter{}
+	middleware, err := NewHTTPMiddleware(limiter, 10*time.Minute, ModelScope, map[string]int64{"allowed": 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	requestBody := `{"model":"allowed"}`
+	handler := middleware.Wrap(http.HandlerFunc(func(_ http.ResponseWriter, request *http.Request) {
+		body, err := io.ReadAll(request.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var payload struct {
+			MaxTokens int64 `json:"max_tokens"`
+		}
+		if err := json.Unmarshal(body, &payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload.MaxTokens != 10 {
+			t.Fatalf("max tokens = %d, want 10", payload.MaxTokens)
+		}
+	}))
+	request := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(requestBody))
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
+	}
+	if limiter.reservedTokens != int64(len(`{"max_tokens":10,"model":"allowed"}`))+10 {
+		t.Fatalf("reserved tokens = %d, want %d", limiter.reservedTokens, len(`{"max_tokens":10,"model":"allowed"}`)+10)
+	}
 }
 
 func (l *fakeReservationLimiter) Reconcile(_ context.Context, _ Reservation, tokens int64) error {
@@ -41,9 +130,9 @@ func (l *fakeReservationLimiter) Extend(_ context.Context, _ Reservation) error 
 
 func TestHTTPMiddlewareReservesAndReconcilesUsage(t *testing.T) {
 	limiter := &fakeReservationLimiter{}
-	middleware, err := NewHTTPMiddleware(limiter, 10*time.Minute, 512, func(_ *http.Request, model string) string {
+	middleware, err := NewHTTPMiddleware(limiter, 10*time.Minute, func(_ *http.Request, model string) string {
 		return "tenant-a:" + model
-	})
+	}, map[string]int64{"test-model": 512})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +175,7 @@ func TestHTTPMiddlewareReturnsRateLimitError(t *testing.T) {
 	limiter := &fakeReservationLimiter{
 		reserveError: &LimitError{Reason: "tokens", RetryAfter: 1500 * time.Millisecond},
 	}
-	middleware, err := NewHTTPMiddleware(limiter, 10*time.Minute, 512, ModelScope)
+	middleware, err := NewHTTPMiddleware(limiter, 10*time.Minute, ModelScope, map[string]int64{"test-model": 512})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,7 +201,7 @@ func TestHTTPMiddlewareReturnsRateLimitError(t *testing.T) {
 
 func TestHTTPMiddlewareReturnsServiceUnavailableForRedisError(t *testing.T) {
 	limiter := &fakeReservationLimiter{reserveError: errors.New("redis unavailable")}
-	middleware, err := NewHTTPMiddleware(limiter, 10*time.Minute, 512, ModelScope)
+	middleware, err := NewHTTPMiddleware(limiter, 10*time.Minute, ModelScope, map[string]int64{"test-model": 512})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +220,7 @@ func TestHTTPMiddlewareReturnsServiceUnavailableForRedisError(t *testing.T) {
 
 func TestHTTPMiddlewareRejectsOversizedRequestBody(t *testing.T) {
 	limiter := &fakeReservationLimiter{}
-	middleware, err := NewHTTPMiddleware(limiter, 10*time.Minute, 512, ModelScope)
+	middleware, err := NewHTTPMiddleware(limiter, 10*time.Minute, ModelScope, map[string]int64{"test-model": 512})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,7 +258,7 @@ func TestHTTPMiddlewareRejectsOversizedRequestBody(t *testing.T) {
 
 func TestHTTPMiddlewareChargesReservationForStreamingResponse(t *testing.T) {
 	limiter := &fakeReservationLimiter{}
-	middleware, err := NewHTTPMiddleware(limiter, 10*time.Minute, 20, ModelScope)
+	middleware, err := NewHTTPMiddleware(limiter, 10*time.Minute, ModelScope, map[string]int64{"test-model": 20})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +272,7 @@ func TestHTTPMiddlewareChargesReservationForStreamingResponse(t *testing.T) {
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 
-	want := int64(len(requestBody) + 20)
+	want := int64(len(`{"max_tokens":20,"model":"test-model","stream":true}`) + 20)
 	if limiter.reconciledTokens != want {
 		t.Fatalf("reconciled tokens = %d, want %d", limiter.reconciledTokens, want)
 	}

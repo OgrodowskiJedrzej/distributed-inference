@@ -27,21 +27,26 @@ type ReservationLimiter interface {
 type ScopeFunc func(*http.Request, string) string
 
 type HTTPMiddleware struct {
-	limiter          ReservationLimiter
-	reservationTTL   time.Duration
-	defaultMaxTokens int64
-	scope            ScopeFunc
+	limiter        ReservationLimiter
+	reservationTTL time.Duration
+	modelMaxTokens map[string]int64
+	scope          ScopeFunc
 }
 
-func NewHTTPMiddleware(limiter ReservationLimiter, reservationTTL time.Duration, defaultMaxTokens int64, scope ScopeFunc) (*HTTPMiddleware, error) {
-	if limiter == nil || reservationTTL <= 0 || defaultMaxTokens <= 0 || scope == nil {
+func NewHTTPMiddleware(limiter ReservationLimiter, reservationTTL time.Duration, scope ScopeFunc, modelMaxTokens map[string]int64) (*HTTPMiddleware, error) {
+	if limiter == nil || reservationTTL <= 0 || scope == nil || len(modelMaxTokens) == 0 {
 		return nil, errors.New("invalid rate limit middleware configuration")
 	}
+	for model, maxTokens := range modelMaxTokens {
+		if model == "" || maxTokens <= 0 {
+			return nil, errors.New("invalid model policy")
+		}
+	}
 	return &HTTPMiddleware{
-		limiter:          limiter,
-		reservationTTL:   reservationTTL,
-		defaultMaxTokens: defaultMaxTokens,
-		scope:            scope,
+		limiter:        limiter,
+		reservationTTL: reservationTTL,
+		modelMaxTokens: modelMaxTokens,
+		scope:          scope,
 	}, nil
 }
 
@@ -65,9 +70,39 @@ func (m *HTTPMiddleware) Wrap(next http.Handler) http.Handler {
 		_ = r.Body.Close()
 		r.Body = io.NopCloser(bytes.NewReader(body))
 
-		request, err := parseChatCompletionRequest(body, m.defaultMaxTokens)
+		request, err := parseChatCompletionRequest(body)
 		if err != nil {
-			writeAPIError(w, http.StatusBadRequest, err.Error(), "invalid_request_error", "invalid_request")
+			code := "invalid_request"
+			var validationError *requestValidationError
+			if errors.As(err, &validationError) {
+				code = validationError.code
+			}
+			writeAPIError(w, http.StatusBadRequest, err.Error(), "invalid_request_error", code)
+			return
+		}
+		maxTokens, allowed := m.modelMaxTokens[request.model]
+		if !allowed {
+			writeAPIError(w, http.StatusBadRequest, "model is not allowed", "invalid_request_error", "model_not_allowed")
+			return
+		}
+		if !request.maxTokensProvided {
+			request.maxTokens = maxTokens
+			body, err = withMaxTokens(body, maxTokens)
+			if err != nil {
+				log.Printf("add default max tokens: %v", err)
+				writeAPIError(w, http.StatusInternalServerError, "failed to prepare request", "server_error", "request_rewrite_error")
+				return
+			}
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			r.ContentLength = int64(len(body))
+			r.TransferEncoding = nil
+		} else if request.maxTokens > maxTokens {
+			writeAPIError(w, http.StatusBadRequest, "max tokens exceeds model limit", "invalid_request_error", "max_tokens_exceeded")
+			return
+		}
+
+		if request.maxTokens <= 0 {
+			writeAPIError(w, http.StatusBadRequest, "max tokens must be positive", "invalid_request_error", "max_tokens_exceeded")
 			return
 		}
 
@@ -147,32 +182,56 @@ type chatCompletionRequest struct {
 }
 
 type parsedChatCompletionRequest struct {
-	model     string
-	maxTokens int64
-	stream    bool
+	model             string
+	maxTokens         int64
+	maxTokensProvided bool
+	stream            bool
 }
 
-func parseChatCompletionRequest(body []byte, defaultMaxTokens int64) (parsedChatCompletionRequest, error) {
+type requestValidationError struct {
+	message string
+	code    string
+}
+
+func (e *requestValidationError) Error() string {
+	return e.message
+}
+
+func parseChatCompletionRequest(body []byte) (parsedChatCompletionRequest, error) {
 	var request chatCompletionRequest
 	if err := json.Unmarshal(body, &request); err != nil {
-		return parsedChatCompletionRequest{}, errors.New("request body must be valid JSON")
+		return parsedChatCompletionRequest{}, &requestValidationError{message: "request body must be valid JSON", code: "invalid_request"}
 	}
 	if request.Model == "" {
-		return parsedChatCompletionRequest{}, errors.New("model is required")
+		return parsedChatCompletionRequest{}, &requestValidationError{message: "model is required", code: "invalid_request"}
+	}
+	if request.MaxTokens != nil && request.MaxCompletionTokens != nil {
+		return parsedChatCompletionRequest{}, &requestValidationError{message: "only one of max_tokens and max_completion_tokens may be set", code: "ambiguous_max_tokens"}
 	}
 
-	maxTokens := defaultMaxTokens
+	var maxTokens int64
+	maxTokensProvided := false
 	if request.MaxTokens != nil {
 		maxTokens = *request.MaxTokens
-	}
-	if request.MaxCompletionTokens != nil {
+		maxTokensProvided = true
+	} else if request.MaxCompletionTokens != nil {
 		maxTokens = *request.MaxCompletionTokens
+		maxTokensProvided = true
 	}
-	if maxTokens < 0 {
-		return parsedChatCompletionRequest{}, errors.New("max tokens cannot be negative")
+	if maxTokensProvided && maxTokens <= 0 {
+		return parsedChatCompletionRequest{}, &requestValidationError{message: "max tokens must be positive", code: "max_tokens_exceeded"}
 	}
 
-	return parsedChatCompletionRequest{model: request.Model, maxTokens: maxTokens, stream: request.Stream}, nil
+	return parsedChatCompletionRequest{model: request.Model, maxTokens: maxTokens, maxTokensProvided: maxTokensProvided, stream: request.Stream}, nil
+}
+
+func withMaxTokens(body []byte, maxTokens int64) ([]byte, error) {
+	var request map[string]json.RawMessage
+	if err := json.Unmarshal(body, &request); err != nil {
+		return nil, err
+	}
+	request["max_tokens"] = json.RawMessage(strconv.FormatInt(maxTokens, 10))
+	return json.Marshal(request)
 }
 
 type responseCapture struct {

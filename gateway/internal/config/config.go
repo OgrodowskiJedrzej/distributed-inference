@@ -24,7 +24,6 @@ type RateLimitConfig struct {
 	RequestsPerMinute int64         `yaml:"requests_per_minute"`
 	TokensPerMinute   int64         `yaml:"tokens_per_minute"`
 	MaxConcurrency    int64         `yaml:"max_concurrency"`
-	DefaultMaxTokens  int64         `yaml:"default_max_tokens"`
 	ReservationTTL    time.Duration `yaml:"reservation_ttl"`
 }
 
@@ -33,11 +32,11 @@ type ModelConfig struct {
 }
 
 type Config struct {
-	Server    ServerConfig    `yaml:"server"`
-	Redis     RedisConfig     `yaml:"redis"`
-	RateLimit RateLimitConfig `yaml:"rate_limit"`
+	Server    ServerConfig           `yaml:"server"`
+	Redis     RedisConfig            `yaml:"redis"`
+	RateLimit RateLimitConfig        `yaml:"rate_limit"`
 	Models    map[string]ModelConfig `yaml:"models"`
-	Upstream  string          `yaml:"upstream"`
+	Upstream  string                 `yaml:"upstream"`
 }
 
 func Load() (Config, error) {
