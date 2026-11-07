@@ -47,10 +47,10 @@ spec:
           resources:
             requests:
               cpu: "2"
-              memory: 2Gi
+              memory: 4Gi
             limits:
               cpu: "4"
-              memory: 3Gi
+              memory: 6Gi
           volumeMounts:
             - name: vllm-cache
               mountPath: /cache

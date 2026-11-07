@@ -8,7 +8,7 @@ resources:
 images:
   - name: mock-vllm
     newName: vllm/vllm-openai-cpu
-    newTag: v0.32.0-arm64
+    newTag: v0.31.0-arm64
 
 patches:
   - path: deployment-patch.yaml
