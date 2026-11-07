@@ -3,10 +3,13 @@ kind: Service
 metadata:
   name: mock-vllm
   namespace: inference
+  labels:
+    app: mock-vllm
 spec:
   type: ClusterIP
   selector:
     app: mock-vllm
   ports:
-    - port: 8000
+    - name: http
+      port: 8000
       targetPort: 8000

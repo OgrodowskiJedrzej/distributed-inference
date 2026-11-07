@@ -1,0 +1,42 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: vllm-worker
+  namespace: inference
+spec:
+  scaleTargetRef:
+    name: mock-vllm
+  minReplicaCount: 1
+  maxReplicaCount: 3
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 0
+          policies:
+            - type: Pods
+              value: 1
+              periodSeconds: 60
+        scaleDown:
+          stabilizationWindowSeconds: 300
+          policies:
+            - type: Pods
+              value: 1
+              periodSeconds: 60
+  triggers:
+    - type: prometheus
+      metricType: AverageValue
+      metadata:
+        serverAddress: http://monitoring-kube-prometheus-prometheus.monitoring.svc:9090
+        threshold: "2"
+        ignoreNullValues: "false"
+        query: >-
+          sum(
+            (
+              vllm:num_requests_running{namespace="inference",service="mock-vllm",model_name="mock-qwen"}
+              +
+              vllm:num_requests_waiting{namespace="inference",service="mock-vllm",model_name="mock-qwen"}
+            )
+            and on(namespace,pod,service)
+            (up{namespace="inference",service="mock-vllm"} == 1)
+          )

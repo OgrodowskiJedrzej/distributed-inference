@@ -10,6 +10,8 @@ PROMETHEUS_LOCAL_PORT="${E2E_PROMETHEUS_PORT:-19090}"
 REQUESTS="${E2E_REQUESTS:-3}"
 MIN_WORKERS="${E2E_MIN_WORKERS:-0}"
 REQUEST_TIMEOUT_SECONDS="${E2E_REQUEST_TIMEOUT_SECONDS:-120}"
+AUTOSCALING="${E2E_AUTOSCALING:-0}"
+ROUTER_LOCAL_PORT="${E2E_ROUTER_PORT:-13000}"
 MONITORING_NAMESPACE="${E2E_MONITORING_NAMESPACE:-monitoring}"
 MONITORING_RELEASE="${E2E_MONITORING_RELEASE:-monitoring}"
 MONITORING_CHART_VERSION="${E2E_MONITORING_CHART_VERSION:-92.16.1}"
@@ -32,20 +34,54 @@ if [[ "${current_context}" != "kind-${KIND_CLUSTER}" ]]; then
   exit 1
 fi
 
+installed_crds="$(kubectl get crd -o name)"
+if [[ "${installed_crds}" == *"customresourcedefinition.apiextensions.k8s.io/scaledobjects.keda.sh"* ]]; then
+  scaled_objects="$(kubectl get scaledobjects -n "${NAMESPACE}" -o name)"
+  if [[ -n "${scaled_objects}" ]]; then
+    echo "Remove the existing ScaledObject before redeploying workers; see README rollback commands." >&2
+    exit 1
+  fi
+fi
+if [[ "${AUTOSCALING}" == "1" ]]; then
+  if [[ "${NAMESPACE}" != "inference" || "${MONITORING_NAMESPACE}" != "monitoring" || "${MONITORING_RELEASE}" != "monitoring" ]]; then
+    echo "Autoscaling manifests require inference/monitoring namespaces and monitoring release." >&2
+    exit 1
+  fi
+  MIN_WORKERS=0
+fi
+
 temporary_directory="$(mktemp -d)"
 gateway_port_forward_pid=""
 prometheus_port_forward_pid=""
+router_port_forward_pid=""
+autoscaling_test_pid=""
 
 cleanup() {
-  for pid in "${gateway_port_forward_pid}" "${prometheus_port_forward_pid}"; do
+  local status=$?
+  if [[ -n "${autoscaling_test_pid}" ]]; then
+    kill -TERM "${autoscaling_test_pid}" >/dev/null 2>&1 || true
+    wait "${autoscaling_test_pid}" >/dev/null 2>&1 || true
+  fi
+  if [[ "${AUTOSCALING}" == "1" && "${status}" != "0" ]]; then
+    kubectl get scaledobject,hpa,deployment,pods -n "${NAMESPACE}" -o wide || true
+    kubectl describe scaledobject vllm-worker -n "${NAMESPACE}" || true
+    kubectl describe hpa -n "${NAMESPACE}" || true
+    kubectl get events -n "${NAMESPACE}" --sort-by=.lastTimestamp || true
+    kubectl logs -n "${NAMESPACE}" -l app=mock-vllm --all-containers --prefix --tail=100 || true
+  fi
+  for pid in "${gateway_port_forward_pid}" "${prometheus_port_forward_pid}" "${router_port_forward_pid}"; do
     if [[ -n "${pid}" ]]; then
       kill "${pid}" >/dev/null 2>&1 || true
       wait "${pid}" >/dev/null 2>&1 || true
     fi
   done
-  rm -f "${temporary_directory}/gateway-port-forward.log"
-  rm -f "${temporary_directory}/prometheus-port-forward.log"
-  rmdir "${temporary_directory}"
+  if [[ "${AUTOSCALING}" == "1" ]]; then
+    echo "Autoscaling artifacts: ${temporary_directory}"
+  else
+    rm -f "${temporary_directory}/gateway-port-forward.log"
+    rm -f "${temporary_directory}/prometheus-port-forward.log"
+    rmdir "${temporary_directory}"
+  fi
 }
 trap cleanup EXIT
 
@@ -57,14 +93,22 @@ kind load docker-image \
   "${GATEWAY_IMAGE}" \
   --name "${KIND_CLUSTER}"
 
-kubectl apply -k "${REPOSITORY_ROOT}/deployment/kubernetes"
+if [[ "${AUTOSCALING}" == "1" ]]; then
+  kubectl apply -k "${REPOSITORY_ROOT}/deployment/overlays/local-vllm-cpu"
+else
+  kubectl apply -k "${REPOSITORY_ROOT}/deployment/kubernetes"
+fi
 kubectl set image \
   deployment/inference-gateway \
   gateway="${GATEWAY_IMAGE}" \
   -n "${NAMESPACE}"
 
 echo "Checking Kubernetes workloads..."
-kubectl rollout status deployment/mock-vllm -n "${NAMESPACE}" --timeout=60s
+worker_rollout_timeout=60s
+if [[ "${AUTOSCALING}" == "1" ]]; then
+  worker_rollout_timeout=15m
+fi
+kubectl rollout status deployment/mock-vllm -n "${NAMESPACE}" --timeout="${worker_rollout_timeout}"
 kubectl rollout status deployment/vllm-router -n "${NAMESPACE}" --timeout=60s
 kubectl rollout status deployment/inference-gateway -n "${NAMESPACE}" --timeout=60s
 
@@ -235,3 +279,37 @@ wait_for_prometheus_metric \
   'sum(vllm_router_active_workers)'
 
 echo "Observability OK: gateway and router metrics are available in Prometheus"
+
+if [[ "${AUTOSCALING}" == "1" ]]; then
+  wait_for_prometheus_metric "vLLM scrape target" \
+    'sum(up{namespace="inference",service="mock-vllm"})'
+  helm upgrade --install keda keda \
+    --repo https://kedacore.github.io/charts \
+    --version 2.20.0 \
+    --namespace keda \
+    --create-namespace \
+    --values "${REPOSITORY_ROOT}/deployment/kubernetes/keda/keda-values-local.yaml" \
+    --wait --timeout 5m
+  kubectl wait --for=condition=Established crd/scaledobjects.keda.sh --timeout=60s
+  kubectl apply -k "${REPOSITORY_ROOT}/deployment/kubernetes/autoscaling"
+  kubectl wait -n "${NAMESPACE}" --for=condition=Ready scaledobject/vllm-worker --timeout=120s
+  hpa_name="$(kubectl get scaledobject vllm-worker -n "${NAMESPACE}" -o jsonpath='{.status.hpaName}')"
+  kubectl wait -n "${NAMESPACE}" --for=condition=ScalingActive "hpa/${hpa_name}" --timeout=120s
+
+  kubectl port-forward -n "${NAMESPACE}" service/vllm-router "${ROUTER_LOCAL_PORT}:30000" \
+    >"${temporary_directory}/router-port-forward.log" 2>&1 &
+  router_port_forward_pid=$!
+  for _ in {1..30}; do
+    if curl --fail --silent "http://127.0.0.1:${ROUTER_LOCAL_PORT}/health" >/dev/null; then
+      break
+    fi
+    sleep 1
+  done
+  curl --fail --silent --show-error "http://127.0.0.1:${ROUTER_LOCAL_PORT}/health" >/dev/null
+  python3 "${SCRIPT_DIRECTORY}/autoscaling.py" \
+    "${BASE_URL}" "http://127.0.0.1:${ROUTER_LOCAL_PORT}" "${PROMETHEUS_BASE_URL}" \
+    "${temporary_directory}" &
+  autoscaling_test_pid=$!
+  wait "${autoscaling_test_pid}"
+  autoscaling_test_pid=""
+fi
