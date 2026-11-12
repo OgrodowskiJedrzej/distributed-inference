@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kv-cache
+  namespace: inference
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: kv-cache
+  template:
+    metadata:
+      labels:
+        app: kv-cache
+    spec:
+      nodeSelector:
+        kubernetes.io/arch: arm64
+      containers:
+        - name: cache
+          image: inference-vllm-lmcache:0.31.0-d0959e0
+          imagePullPolicy: IfNotPresent
+          command: [lmcache, server]
+          args:
+            - --host
+            - 0.0.0.0
+            - --port
+            - "5555"
+            - --http-host
+            - 0.0.0.0
+            - --http-port
+            - "8080"
+            - --l1-size-gb
+            - "1"
+            - --chunk-size
+            - "128"
+            - --eviction-policy
+            - LRU
+            - --supported-transfer-mode
+            - engine_driven
+            - --shm-name
+            - ""
+          ports:
+            - name: kv
+              containerPort: 5555
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthcheck
+              port: http
+          startupProbe:
+            httpGet:
+              path: /healthcheck
+              port: http
+            periodSeconds: 5
+            failureThreshold: 60
+          resources:
+            requests:
+              cpu: "1"
+              memory: 2Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kv-cache
+  namespace: inference
+spec:
+  selector:
+    app: kv-cache
+  ports:
+    - name: kv
+      port: 5555
+      targetPort: kv
+    - name: http
+      port: 8080
+      targetPort: http
