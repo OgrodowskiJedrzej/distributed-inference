@@ -1,0 +1,19 @@
+{
+  "model": "HuggingFaceTB/SmolLM2-135M-Instruct",
+  "model_revision": "12fd25f77366fa6b3b4b768ec3050bf629380bac",
+  "tokenizer_revision": "12fd25f77366fa6b3b4b768ec3050bf629380bac",
+  "served_model": "mock-qwen",
+  "endpoint": "http://inference-gateway:8000/v1/chat/completions",
+  "gateway_profile": "normal",
+  "input_tokens": 128,
+  "output_tokens": 32,
+  "max_model_len": 1024,
+  "seed": 0,
+  "timeout_seconds": 120,
+  "stages": [
+    {"duration_seconds": 60, "request_rate": 0.5},
+    {"duration_seconds": 120, "request_rate": 2},
+    {"duration_seconds": 120, "request_rate": 4},
+    {"duration_seconds": 420, "request_rate": 0}
+  ]
+}

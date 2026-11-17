@@ -1,0 +1,20 @@
+server:
+  host: 0.0.0.0
+  port: "8000"
+
+redis:
+  address: redis:6379
+  password: ""
+  db: 0
+
+rate_limit:
+  requests_per_minute: 6000
+  tokens_per_minute: 10000000
+  max_concurrency: 256
+  reservation_ttl: 10m
+
+models:
+  mock-qwen:
+    max_tokens: 512
+
+upstream: http://127.0.0.1:8001

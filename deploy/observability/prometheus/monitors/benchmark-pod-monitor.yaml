@@ -1,0 +1,21 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: pipeline-benchmark
+  namespace: inference
+  labels:
+    release: monitoring
+spec:
+  namespaceSelector:
+    matchNames:
+      - inference
+  selector:
+    matchLabels:
+      app: pipeline-benchmark
+  podTargetLabels:
+    - app
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: 5s
+      scrapeTimeout: 3s
