@@ -5,9 +5,13 @@ ENV NO_GPU_EXT=1 \
     SETUPTOOLS_SCM_PRETEND_VERSION=0.0.0.dev0 \
     LMCACHE_MP_TRANSFER_MODE=engine_driven
 
+COPY patches/start-heartbeat-after-registration.patch /opt/start-heartbeat-after-registration.patch
+
 RUN python3 -c "import importlib.metadata as m; print('torch==' + m.version('torch'))" > /tmp/torch-constraint.txt \
     && curl -fsSL "https://codeload.github.com/LMCache/LMCache/tar.gz/${LMCACHE_REVISION}" | tar -xz -C /opt \
     && mv "/opt/LMCache-${LMCACHE_REVISION}" /opt/lmcache \
+    && git -C /opt/lmcache apply --check /opt/start-heartbeat-after-registration.patch \
+    && git -C /opt/lmcache apply /opt/start-heartbeat-after-registration.patch \
     && python3 -m pip install --no-cache-dir -c /tmp/torch-constraint.txt -r /opt/lmcache/requirements/build.txt -r /opt/lmcache/requirements/common.txt -r /opt/lmcache/requirements/cli.txt \
     && python3 -m pip install --no-cache-dir --no-deps --no-build-isolation /opt/lmcache \
     && python3 -m pip uninstall -y opentelemetry-exporter-otlp-common \
