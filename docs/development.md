@@ -31,6 +31,22 @@ mock pipeline.
 
 ## End-to-end tests
 
+Requires Docker, kind, kubectl, Helm, curl and Python 3; Gateway development also
+requires Go. Kubernetes procedures target `kind-inference-lab`.
+
+| Entry point | Purpose | Side effects |
+| --- | --- | --- |
+| Gateway `go test ./...` | Unit tests; Redis stress test opt-in | Stress test uses configured Redis |
+| `tests/e2e/pipeline.sh` | Pipeline smoke and mock log correlation | Builds images, applies manifests and Helm releases |
+| `tests/e2e/autoscaling.py` | Scaling and worker participation | Load and replica changes |
+| `tests/e2e/external_kv_cache.py` | Reuse after worker replacement | Restarts worker Deployment |
+| `tests/e2e/shared_kv_cache.py` | Cross-worker reuse and replacement | Deletes one worker Pod |
+
+Cache runners require new output directories, preserve evidence and stop
+port-forwards without removing deployments. Read the
+[cache procedure](../experiments/external-kv-cache/README.md) first: these are
+not passive health checks. Live multi-worker validation remains pending.
+
 Run the end-to-end smoke test against the deployed stack:
 
 ```sh

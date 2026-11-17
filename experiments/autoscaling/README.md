@@ -9,6 +9,27 @@ requests per replica, with one to three replicas. Scale-up adds at most one Pod
 per minute; scale-down waits five minutes and removes at most one Pod per minute.
 Missing metrics report a scaler error instead of zero load.
 
+## Control loop and scope
+
+```text
+Router -> selected worker -> running/waiting metrics -> Prometheus
+                                                        |
+                                   KEDA -> HPA <----------+
+                                            |
+                                  Deployment replica count
+```
+
+Router selects endpoints; it does not change replica counts. The scaler query
+sums running and waiting requests for `mock-qwen` on healthy `mock-vllm` targets.
+KEDA exposes the external metric to HPA with `AverageValue` target 2. Kubernetes
+then creates or deletes worker Pods. Model-file persistence avoids repeated
+downloads, not all model startup work.
+
+This procedure targets the standard CPU overlay, not MP-backed cache scaling.
+It does not prove graceful migration or resumption of active generations.
+The runner defines verification criteria; only saved successful live-run
+artifacts establish that those criteria held for a particular deployment.
+
 Install Prometheus, then deploy the CPU overlay and worker monitoring before
 enabling autoscaling:
 
@@ -31,9 +52,10 @@ kubectl get hpa -n inference -w
 ```
 
 The CPU profile uses vLLM `0.31.0-arm64`, requests 4 GiB and limits memory to
-6 GiB per replica. Three replicas fit the current single-node kind allocation
-of approximately 23 GiB. The shared ReadWriteOnce cache is intended for this
-single-node setup. Multi-node deployments need a separate cache strategy.
+6 GiB per replica. Check node capacity for three replicas plus monitoring and
+system workloads; a nominal node allocation alone does not guarantee fit. The
+shared ReadWriteOnce model-file cache is intended for a single-node setup.
+Multi-node deployments need a separate model-file storage strategy.
 
 Do not reapply the base deployment or CPU overlay while the ScaledObject is
 active: their fixed replica counts conflict with HPA ownership. Roll back before
