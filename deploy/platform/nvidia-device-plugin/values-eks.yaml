@@ -1,0 +1,16 @@
+nodeSelector:
+  inference/workload: gpu
+
+affinity: null
+
+tolerations:
+  - key: nvidia.com/gpu
+    operator: Equal
+    value: "true"
+    effect: NoSchedule
+
+failOnInitError: true
+migStrategy: none
+
+gfd:
+  enabled: false
