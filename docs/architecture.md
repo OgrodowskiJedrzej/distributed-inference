@@ -3,7 +3,9 @@
 The request path is:
 
 ```text
-Client -> Gateway -> vLLM Router -> Worker
+Client -> Gateway -> llm-d Envoy -> Worker
+                           |
+                           +-> Endpoint Picker (EPP)
              |
              +-> Redis rate limiter
 
@@ -11,11 +13,23 @@ Worker -> LMCache server (optional external KV-cache profile)
 ```
 
 The Go gateway exposes `POST /v1/chat/completions`, validates the model policy,
-reserves rate-limit capacity in Redis, and proxies the request to vLLM Router.
+reserves rate-limit capacity in Redis, and proxies the request to the llm-d standalone Service.
 Request correlation IDs and internal Redis reservation IDs are independent.
 
-vLLM Router is an external image. Kubernetes service discovery finds workers,
-and the configured `power_of_two` policy distributes requests among them.
+llm-d uses an Envoy sidecar and one EPP replica, installed by the pinned upstream
+standalone Helm chart. An InferencePool selects ready Pods with app=mock-vllm
+on port 8000. EPP scores queue depth and KV utilization from worker /metrics;
+Envoy forwards HTTP and SSE to the selected endpoint. Prefix affinity is disabled:
+the existing external LMCache is not an event-driven cache index for the router.
+The mock worker has no model metrics, so it validates HTTP routing only, not
+load-aware selection. Real CPU/GPU profiles need live routing validation.
+
+The fixed release is llmd in inference; its HTTP Service is llmd-epp:8081.
+Kustomize installs workers and Gateway; the deployment instructions install
+the InferencePool CRD with kubectl and the Helm release separately. Applying Kustomize alone
+does not install llm-d. EPP/Envoy use fail-closed routing when scheduling fails.
+The development requests (500m CPU and 768 MiB total) are not a performance
+sizing recommendation.
 
 The base profile uses the mock worker from `tests/fixtures/mock-worker/`.
 The ARM64 CPU overlay replaces it with vLLM serving
@@ -28,8 +42,8 @@ single-worker profile tests reuse after replacement. The multi-worker profile
 connects two identical vLLM replicas to that same server and provides a test for
 cross-worker reuse. Each replica performs both prefill and decode.
 
-The router retains `power_of_two`; worker selection does not require session
-affinity because both replicas can retrieve the same externally cached prefix.
+The router uses load scores without prefix affinity; both replicas can retrieve
+the same externally cached prefix.
 KV lookup follows the input token prefix and compatible model/cache identity.
 Clients must still provide the full conversation in each chat request. Missing
 cache blocks can be recomputed; KV storage is not a conversation database.
@@ -56,8 +70,8 @@ configurations and keep their validation scripts in `tests/e2e/`.
    `X-Request-ID`, overwriting any supplied ID and returning it in the response.
 2. Gateway validates the model and output limit and reserves Redis capacity.
    Limits are per model, not per user. Exhaustion returns 429; Redis failure 503.
-3. Router discovers healthy worker endpoints and selects with `power_of_two`.
-   No conversation affinity or cache-aware selection is configured.
+3. EPP discovers ready worker endpoints through the InferencePool and scores
+   queue depth and KV utilization. No conversation or prefix affinity is configured.
 4. Worker performs prefill and decode. With external KV, compatible token-prefix
    blocks can be retrieved from MP. Missing or evicted blocks are recomputed;
    transport-error fallback has not been validated.
@@ -89,7 +103,9 @@ to resume an interrupted generation. Retry is not live migration.
 
 ## Implementation boundaries
 
-Gateway is repository Go code; Router is `vllm/vllm-router:v0.1.16`. The mock
+Gateway is repository Go code; routing uses llm-d chart/EPP v1.0.0 and
+Envoy distroless-v1.33.2. The chart is pinned by OCI digest in the deployment commands and
+`tests/e2e/pipeline.sh`. The mock
 worker is a Python fixture. Real CPU profiles use vLLM `0.31.0-arm64`; the
 integration image adds pinned LMCache. MP uses TCP 5555 and management port 8080.
 
@@ -97,8 +113,10 @@ Gateway exposes only chat completions, `/healthz` and `/metrics`. Health does
 not check dependencies. Tests access `/v1/completions`, `/tokenize` and
 `/v1/models` directly on Router/workers, not through Gateway.
 
-The multi-worker overlay and runner exist; live cross-worker validation is
-pending. P/D splitting, cache-aware scheduling, Redis-backed model KV and custom
+The multi-worker overlay and runner exist. Historical CPU cache results used
+vLLM Router; they do not validate the new llm-d path. P/D splitting,
+prefix-cache-aware scheduling, Redis-backed model KV and custom
 hybrid parallelism are not implemented. vLLM already schedules batches internally
 with at most two concurrent sequences in CPU profiles. No custom batch scheduler
-or distributed tracing is configured.
+or distributed tracing is configured. Future P/D uses separate prefill/decode
+scheduler profiles and a decode routing sidecar; neither is deployed here.

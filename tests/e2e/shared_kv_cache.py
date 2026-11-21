@@ -231,7 +231,7 @@ def main():
         continuation = {**request_a, "prompt": request_a["prompt"] + request_b["prompt"][:64]}
         continued_output = run("a-extends-prefix", [(0, continuation)], warm=True)
         run("b-continues-same-context", [(1, continuation)], warm=True, expected=continued_output)
-        router_url = forward("service/vllm-router", 30000)
+        router_url = forward("service/llmd-epp", 8081)
         router_response = completion(router_url, request_a)
         save("router-response.json", router_response)
         if router_response["choices"][0]["text"] != output_a[0]:

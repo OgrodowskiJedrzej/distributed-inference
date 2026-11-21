@@ -82,7 +82,7 @@ data:
             "name": "component",
             "label": "Log components",
             "type": "custom",
-            "query": "inference-gateway,vllm-router,mock-vllm,kv-cache,pipeline-benchmark",
+            "query": "inference-gateway,llmd-epp,mock-vllm,kv-cache,pipeline-benchmark",
             "multi": true,
             "includeAll": true,
             "allValue": ".*",
@@ -100,7 +100,7 @@ data:
               "type": "loki",
               "uid": "loki"
             },
-            "query": "label_values({namespace=\"inference\",app=~\"${component:regex}\"}, pod)",
+            "query": "label_values({namespace=\"inference\"}, pod)",
             "refresh": 2,
             "sort": 1,
             "multi": true,
@@ -341,7 +341,7 @@ data:
           "targets": [
             {
               "refId": "A",
-              "expr": "up{namespace=\"inference\",service=~\"inference-gateway|vllm-router|mock-vllm|kv-cache\"}",
+              "expr": "up{namespace=\"inference\",service=~\"inference-gateway|llmd-epp|mock-vllm|kv-cache\"}",
               "legendFormat": "{{service}} / {{pod}}",
               "editorMode": "code",
               "datasource": {
@@ -1737,9 +1737,9 @@ data:
         },
         {
           "id": 29,
-          "title": "Router active workers",
+          "title": "Router ready endpoints",
           "type": "timeseries",
-          "description": "Router membership, not desired replicas. A ready Kubernetes Pod may not yet be registered with the router.",
+          "description": "Ready endpoints observed by llm-d, not desired replicas. Missing metrics are not zero endpoints.",
           "gridPos": {
             "x": 0,
             "y": 84,
@@ -1779,7 +1779,7 @@ data:
           "targets": [
             {
               "refId": "A",
-              "expr": "sum(vllm_router_active_workers{namespace=\"inference\",service=\"vllm-router\"})",
+              "expr": "max(llm_d_epp_ready_endpoints{namespace=\"inference\",service=\"llmd-epp\",name=\"llmd\"})",
               "legendFormat": "active workers",
               "editorMode": "code",
               "datasource": {
@@ -3249,7 +3249,7 @@ data:
               },
               "editorMode": "code",
               "queryType": "range",
-              "expr": "{namespace=\"inference\",app=~\"${component:regex}\",pod=~\"${log_pod:regex}\"} |= ${request_id:doublequote}"
+              "expr": "{namespace=\"inference\",pod=~\"${log_pod:regex}\"} | label_format app=\"{{ if hasPrefix \\\"llmd-epp-\\\" .pod }}llmd-epp{{ else }}{{ .app }}{{ end }}\" | app=~\"${component:regex}\" |= ${request_id:doublequote}"
             }
           ]
         },

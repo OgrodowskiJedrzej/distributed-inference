@@ -82,7 +82,7 @@ docker buildx build --platform linux/amd64 --tag "$GATEWAY_REPOSITORY:$GATEWAY_T
 ```
 
 Replace the gateway repository and tag placeholders in the EKS Kustomization.
-Never reuse an existing ECR tag. The worker and router use their public images.
+Never reuse an existing ECR tag. The worker uses its public image; llm-d EPP/Envoy are installed by Helm.
 
 Install the NVIDIA device plugin, pinned to chart version 0.17.1:
 
@@ -105,9 +105,18 @@ helm upgrade --install inference-redis redis \
   --repo https://charts.bitnami.com/bitnami \
   --version "$REDIS_CHART_VERSION" --namespace inference \
   --values deploy/platform/redis/redis-values-eks.yaml --wait
+kubectl --context "$(kubectl config current-context)" apply -f deploy/kubernetes/base/namespace.yaml
+kubectl --context "$(kubectl config current-context)" apply -f \
+  https://github.com/kubernetes-sigs/gateway-api-inference-extension/releases/download/v1.6.2/v1-manifests.yaml
+kubectl --context "$(kubectl config current-context)" wait --for=condition=Established \
+  crd/inferencepools.inference.networking.k8s.io --timeout=60s
+helm upgrade --install llmd \
+  oci://ghcr.io/llm-d/charts/llm-d-router-standalone@sha256:c1d1af55382ef1097188d188070385c6de02b771f34681678e658a59e975024c \
+  --kube-context "$(kubectl config current-context)" --namespace inference \
+  --values deploy/llm-d/values.yaml --wait --timeout 5m
 kubectl apply -k deploy/kubernetes/overlays/eks-gpu
 kubectl rollout status deployment/mock-vllm -n inference --timeout=20m
-kubectl rollout status deployment/vllm-router -n inference
+kubectl rollout status deployment/llmd-epp -n inference
 kubectl rollout status deployment/inference-gateway -n inference
 kubectl port-forward -n inference service/inference-gateway 18000:8000
 ```
@@ -124,12 +133,21 @@ curl --fail http://localhost:18000/v1/chat/completions \
 The existing `tests/e2e/pipeline.sh` targets kind and installs local dependencies;
 do not use it as an EKS deployment script.
 
+The default router is llm-d standalone (Envoy + EPP + InferencePool). Its
+development resource requests total 500m CPU / 768 MiB; account for system and
+Redis workloads on the CPU group. Worker metrics compatibility with this vLLM
+image and load-aware behavior require live validation. No model/worker flags
+were changed by the router migration. See [llm-d lifecycle and rollback](deployment.md#llm-d-lifecycle-and-migration).
+Keep the shared InferencePool CRD on teardown unless the cluster is being
+destroyed or no other installation uses it.
+
 ## Later: remove the development environment
 
 Delete the application and Helm releases while cluster access still works:
 
 ```sh
 kubectl delete -k deploy/kubernetes/overlays/eks-gpu
+helm uninstall llmd -n inference
 helm uninstall inference-redis -n inference
 helm uninstall nvidia-device-plugin -n nvidia-device-plugin
 terraform -chdir=infrastructure plan -destroy

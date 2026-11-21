@@ -19,7 +19,7 @@ spec:
           imagePullPolicy: IfNotPresent
           env:
             - name: UPSTREAM_URL
-              value: http://vllm-router:30000
+              value: http://llmd-epp:8081
             - name: REDIS_ADDRESS
               value: inference-redis-master:6379
             - name: REDIS_PASSWORD

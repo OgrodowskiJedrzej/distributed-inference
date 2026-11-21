@@ -1,6 +1,6 @@
 # Inference server
 
-An inference infrastructure repository combining a Go API gateway, vLLM Router,
+An inference infrastructure repository combining a Go API gateway, llm-d standalone router,
 vLLM workers, and local Kubernetes deployment profiles.
 
 The gateway exposes OpenAI-compatible chat completions with Redis-backed rate
@@ -34,19 +34,19 @@ the ignored `artifacts/` directory.
 ## Documentation
 
 Read [architecture](docs/architecture.md) for request flow and state ownership,
-then [deployment](docs/deployment.md) for profiles and
+then [deployment](docs/deployment.md) for the pinned llm-d Helm install and profiles, and
 [observability](docs/observability.md) for debugging.
 
 | Capability | Current scope |
 | --- | --- |
-| Routing | Redis admission and `power_of_two` worker selection |
+| Routing | Redis admission; llm-d selects ready workers using queue and KV-utilization scores |
 | Inference | Mock pipeline or single-node ARM64 CPU vLLM |
 | External KV | One RAM-backed MP server; one- and two-worker profiles |
 | Cross-worker reuse | Overlay and runner present; live validation pending |
 | Autoscaling | Optional KEDA/HPA, one to three standard CPU workers |
 | Debugging | Prometheus and Loki/Grafana; no distributed tracing |
 
-P/D splitting, cache-aware scheduling, Redis-backed KV and custom hybrid
+P/D splitting, prefix-cache-aware scheduling, Redis-backed KV and custom hybrid
 parallelism remain future work. Redis currently stores rate-limiter state only.
 
 - [Architecture](docs/architecture.md)

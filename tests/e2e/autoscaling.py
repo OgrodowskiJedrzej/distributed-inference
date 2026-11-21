@@ -111,7 +111,7 @@ def sample(metric_query):
         "ready": deployment["status"].get("readyReplicas", 0),
         "pods": [pod["metadata"]["name"] for pod in active_pods],
         "load": scalar(metric_query),
-        "router_workers": scalar("sum(vllm_router_active_workers)"),
+        "router_workers": scalar('max(llm_d_epp_ready_endpoints{namespace="inference",service="llmd-epp",name="llmd"})'),
         "up": scalar('sum(up{namespace="inference",service="mock-vllm"})'),
         "successes": {item["metric"]["pod"]: float(item["value"][1]) for item in successes},
     }

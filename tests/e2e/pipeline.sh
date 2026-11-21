@@ -47,6 +47,11 @@ if [[ "${installed_crds}" == *"customresourcedefinition.apiextensions.k8s.io/sca
     exit 1
   fi
 fi
+if [[ "${NAMESPACE}" != "inference" ]]; then
+  echo "Application and llm-d manifests require the inference namespace." >&2
+  exit 1
+fi
+
 if [[ "${AUTOSCALING}" == "1" ]]; then
   if [[ "${NAMESPACE}" != "inference" || "${MONITORING_NAMESPACE}" != "monitoring" || "${MONITORING_RELEASE}" != "monitoring" ]]; then
     echo "Autoscaling manifests require inference/monitoring namespaces and monitoring release." >&2
@@ -131,7 +136,16 @@ if [[ "${AUTOSCALING}" == "1" ]]; then
   worker_rollout_timeout=15m
 fi
 kubectl rollout status deployment/mock-vllm -n "${NAMESPACE}" --timeout="${worker_rollout_timeout}"
-kubectl rollout status deployment/vllm-router -n "${NAMESPACE}" --timeout=60s
+kubectl --context "${current_context}" apply -f "${REPOSITORY_ROOT}/deploy/kubernetes/base/namespace.yaml"
+kubectl --context "${current_context}" apply -f \
+  https://github.com/kubernetes-sigs/gateway-api-inference-extension/releases/download/v1.6.2/v1-manifests.yaml
+kubectl --context "${current_context}" wait --for=condition=Established \
+  crd/inferencepools.inference.networking.k8s.io --timeout=60s
+helm upgrade --install llmd \
+  oci://ghcr.io/llm-d/charts/llm-d-router-standalone@sha256:c1d1af55382ef1097188d188070385c6de02b771f34681678e658a59e975024c \
+  --kube-context "${current_context}" --namespace inference \
+  --values "${REPOSITORY_ROOT}/deploy/llm-d/values.yaml" --wait --timeout 5m
+kubectl rollout status deployment/llmd-epp -n "${NAMESPACE}" --timeout=60s
 kubectl rollout status deployment/inference-gateway -n "${NAMESPACE}" --timeout=60s
 
 echo "Deploying observability stack..."
@@ -379,11 +393,11 @@ wait_for_prometheus_metric \
   "gateway_http_requests_total" \
   'sum(gateway_http_requests_total{route="/v1/chat/completions"})'
 wait_for_prometheus_metric \
-  "vllm-router scrape target" \
-  "sum(up{namespace=\"${NAMESPACE}\",service=\"vllm-router\"})"
+  "llmd-epp scrape target" \
+  "sum(up{namespace=\"${NAMESPACE}\",service=\"llmd-epp\"})"
 wait_for_prometheus_metric \
-  "vllm_router_active_workers" \
-  'sum(vllm_router_active_workers)'
+  "llm_d_epp_ready_endpoints" \
+  'max(llm_d_epp_ready_endpoints{namespace="inference",service="llmd-epp",name="llmd"})'
 
 echo "Observability OK: gateway and router metrics are available in Prometheus"
 
@@ -403,16 +417,16 @@ if [[ "${AUTOSCALING}" == "1" ]]; then
   hpa_name="$(kubectl get scaledobject vllm-worker -n "${NAMESPACE}" -o jsonpath='{.status.hpaName}')"
   kubectl wait -n "${NAMESPACE}" --for=condition=ScalingActive "hpa/${hpa_name}" --timeout=120s
 
-  kubectl port-forward -n "${NAMESPACE}" service/vllm-router "${ROUTER_LOCAL_PORT}:30000" \
+  kubectl port-forward -n "${NAMESPACE}" service/llmd-epp "${ROUTER_LOCAL_PORT}:8081" \
     >"${temporary_directory}/router-port-forward.log" 2>&1 &
   router_port_forward_pid=$!
   for _ in {1..30}; do
-    if curl --fail --silent "http://127.0.0.1:${ROUTER_LOCAL_PORT}/health" >/dev/null; then
+    if curl --fail --silent "http://127.0.0.1:${ROUTER_LOCAL_PORT}/v1/models" >/dev/null; then
       break
     fi
     sleep 1
   done
-  curl --fail --silent --show-error "http://127.0.0.1:${ROUTER_LOCAL_PORT}/health" >/dev/null
+  curl --fail --silent --show-error "http://127.0.0.1:${ROUTER_LOCAL_PORT}/v1/models" >/dev/null
   python3 "${SCRIPT_DIRECTORY}/autoscaling.py" \
     "${BASE_URL}" "http://127.0.0.1:${ROUTER_LOCAL_PORT}" "${PROMETHEUS_BASE_URL}" \
     "${temporary_directory}" &

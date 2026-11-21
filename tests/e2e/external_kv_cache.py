@@ -105,7 +105,7 @@ def main():
         save("worker-before.json", worker)
         cache_id = identity(cache)
         cache_url = forward("service/kv-cache", 8080)
-        router_url = forward("service/vllm-router", 30000)
+        router_url = forward("service/llmd-epp", 8081)
 
         def snapshot(label, worker_url):
             cache_metrics = http(cache_url, "/metrics")

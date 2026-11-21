@@ -29,7 +29,7 @@ data:
             {
               "datasource": {"type": "loki", "uid": "loki"},
               "editorMode": "code",
-              "expr": "{namespace=\"inference\", app=~\"$component\"} |~ \"$request_id\"",
+              "expr": "{namespace=\"inference\"} | label_format app=\"{{ if hasPrefix \\\"llmd-epp-\\\" .pod }}llmd-epp{{ else }}{{ .app }}{{ end }}\" | app=~\"$component\" |~ \"$request_id\"",
               "queryType": "range",
               "refId": "A"
             }
@@ -58,7 +58,7 @@ data:
             "multi": true,
             "name": "component",
             "options": [],
-            "query": "inference-gateway,vllm-router,mock-vllm,kv-cache",
+            "query": "inference-gateway,llmd-epp,mock-vllm,kv-cache",
             "type": "custom"
           }
         ]
