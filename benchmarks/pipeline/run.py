@@ -19,8 +19,8 @@ def command(*args, **kwargs):
     return subprocess.run(args, check=True, capture_output=True, text=True, timeout=30, **kwargs).stdout
 
 
-def kubectl(*args):
-    return command("kubectl", "-n", NAMESPACE, *args)
+def kubectl(*args, **kwargs):
+    return command("kubectl", "-n", NAMESPACE, *args, **kwargs)
 
 
 def get(resource, *args):

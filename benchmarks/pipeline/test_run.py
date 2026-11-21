@@ -28,6 +28,13 @@ class RunnerTests(unittest.TestCase):
     def setUp(self):
         self.config = json.loads((run.HERE / "workloads.json").read_text())
 
+    def test_kubectl_forwards_manifest_input(self):
+        with patch.object(run.subprocess, "run") as process:
+            process.return_value = subprocess.CompletedProcess([], 0, "created", "")
+            self.assertEqual(run.kubectl("create", "-f", "-", input="{}"), "created")
+        process.assert_called_once_with(("kubectl", "-n", "inference", "create", "-f", "-"),
+                                        check=True, capture_output=True, text=True, timeout=30, input="{}")
+
     def test_pod_targets_gateway_and_reuses_digest_read_only_cache(self):
         worker = run.worker_config(state(), self.config)
         manifest = run.pod_manifest("bench", "scripts", "id", worker, self.config)
