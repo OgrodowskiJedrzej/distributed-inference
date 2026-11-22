@@ -96,23 +96,18 @@ real workers, inspect per-worker queues/KV metrics and request counters under
 uneven load. No live llm-d routing, cancellation, worker-failure, or GPU/P/D
 validation is claimed by this repository migration.
 
-Applying Kustomize does not prune the previous vLLM Router. After successful
-cutover remove only its retained legacy resources:
+Applying Kustomize does not prune an existing vLLM Router installation. Its
+manifests have been removed. After successful cutover, remove only the legacy
+resources by name:
 
 ```sh
-kubectl delete -k deploy/kubernetes/base/router
+kubectl delete deployment,service,serviceaccount,role,rolebinding vllm-router \
+  -n inference --ignore-not-found
 ```
 
-For rollback, first restore the old router, then restore the Gateway upstream:
+To restore a previous deployment, use the matching Git revision and images;
+this checkout no longer provides a vLLM Router rollback profile.
 
-```sh
-kubectl apply -k deploy/kubernetes/base/router
-kubectl rollout status deployment/vllm-router -n inference
-kubectl set env deployment/inference-gateway -n inference UPSTREAM_URL=http://vllm-router:30000
-kubectl rollout status deployment/inference-gateway -n inference
-```
-
-The rollback is a runtime override; the next application apply restores llm-d.
 Historical experiment instructions and recorded results may still reference
 vLLM Router. Adapted cache/autoscaling runners now target llm-d and must be rerun
 in new output directories before drawing comparisons. Autoscaling retains the

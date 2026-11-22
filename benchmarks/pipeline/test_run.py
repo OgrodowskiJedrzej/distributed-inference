@@ -59,7 +59,7 @@ class RunnerTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 run.validate(self.config)
         self.config["stages"][0]["request_rate"] = 0
-        self.config["endpoint"] = "http://vllm-router:30000/v1/chat/completions"
+        self.config["endpoint"] = "http://llmd-epp:8081/v1/chat/completions"
         with self.assertRaises(ValueError):
             run.validate(self.config)
 
