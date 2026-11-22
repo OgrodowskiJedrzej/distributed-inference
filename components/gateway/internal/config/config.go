@@ -40,7 +40,11 @@ type Config struct {
 }
 
 func Load() (Config, error) {
-	data, err := os.ReadFile("config.yaml")
+	path := os.Getenv("CONFIG_PATH")
+	if path == "" {
+		path = "config.yaml"
+	}
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return Config{}, err
 	}

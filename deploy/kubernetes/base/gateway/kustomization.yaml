@@ -3,3 +3,8 @@ kind: Kustomization
 resources:
   - deployment.yaml
   - service.yaml
+configMapGenerator:
+  - name: inference-gateway-config
+    namespace: inference
+    files:
+      - config.yaml

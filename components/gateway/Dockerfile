@@ -13,7 +13,6 @@ FROM alpine:3.22
 WORKDIR /app
 
 COPY --from=build /gateway /app/gateway
-COPY config.yaml /app/config.yaml
 
 USER nobody
 EXPOSE 8000

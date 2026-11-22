@@ -4,12 +4,14 @@ Run commands from the repository root unless a command changes directory.
 
 ## Gateway
 
-The gateway reads `config.yaml` relative to its working directory:
+The gateway loads the file specified by `CONFIG_PATH`, falling back to
+`config.yaml` in its working directory. The image contains no configuration;
+Kubernetes mounts it from a ConfigMap. For local development:
 
 ```sh
 cd components/gateway
 go test ./...
-go run ./cmd
+CONFIG_PATH=../../deploy/kubernetes/base/gateway/config.yaml go run ./cmd
 ```
 
 Redis must be available at the configured address. Environment overrides include
@@ -24,7 +26,7 @@ docker compose -f deploy/compose/compose.yaml up -d
 ```
 
 This ARM64 profile starts only a real CPU worker on port 8001 and serves
-`test-model`. The gateway's default configuration allows `mock-qwen`, so
+`test-model`. The base gateway configuration allows `mock-qwen`, so
 the Compose profile requires a matching gateway model configuration and a
 separately running Redis. The Kubernetes quickstart provides the matching
 mock pipeline.

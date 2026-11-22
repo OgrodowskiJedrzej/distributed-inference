@@ -18,6 +18,8 @@ spec:
           image: inference-gateway:v0.1
           imagePullPolicy: IfNotPresent
           env:
+            - name: CONFIG_PATH
+              value: /app/config.yaml
             - name: UPSTREAM_URL
               value: http://llmd-epp:8081
             - name: REDIS_ADDRESS
@@ -42,3 +44,12 @@ spec:
             limits:
               cpu: 250m
               memory: 128Mi
+          volumeMounts:
+            - name: gateway-config
+              mountPath: /app/config.yaml
+              subPath: config.yaml
+              readOnly: true
+      volumes:
+        - name: gateway-config
+          configMap:
+            name: inference-gateway-config

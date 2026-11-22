@@ -12,5 +12,12 @@ images:
     newName: vllm/vllm-openai
     newTag: v0.8.5
 
+configMapGenerator:
+  - name: inference-gateway-config
+    namespace: inference
+    behavior: replace
+    files:
+      - config.yaml=gateway-config.yaml
+
 patches:
   - path: worker-patch.yaml

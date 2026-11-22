@@ -7,6 +7,7 @@ import (
 )
 
 func TestLoadUsesUpstreamFromEnvironment(t *testing.T) {
+	t.Setenv("CONFIG_PATH", "")
 	workingDirectory, err := os.Getwd()
 	if err != nil {
 		t.Fatal(err)
@@ -46,5 +47,24 @@ func TestLoadUsesUpstreamFromEnvironment(t *testing.T) {
 	}
 	if loaded.Redis.Password != "test-password" {
 		t.Fatalf("upstream = %q, want %q", loaded.Redis.Password, "test-password")
+	}
+}
+
+func TestLoadUsesConfigPath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "gateway.yaml")
+	if err := os.WriteFile(path, []byte("models:\n  gpt-oss-120b:\n    max_tokens: 4096\nupstream: http://llmd-epp:8081\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CONFIG_PATH", path)
+	t.Setenv("UPSTREAM_URL", "http://override:8081")
+	loaded, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Models["gpt-oss-120b"].MaxTokens != 4096 {
+		t.Fatalf("models = %v", loaded.Models)
+	}
+	if loaded.Upstream != "http://override:8081" {
+		t.Fatalf("upstream = %q", loaded.Upstream)
 	}
 }

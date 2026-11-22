@@ -4,7 +4,9 @@ namespace: inference
 resources:
   - ../../base/gateway
 configMapGenerator:
-  - name: inference-gateway-load-config
+  - name: inference-gateway-config
+    namespace: inference
+    behavior: replace
     files:
       - config.yaml
 patches:
@@ -21,15 +23,3 @@ patches:
           metadata:
             annotations:
               inference-lab/gateway-profile: load
-          spec:
-            containers:
-              - name: gateway
-                volumeMounts:
-                  - name: gateway-load-config
-                    mountPath: /app/config.yaml
-                    subPath: config.yaml
-                    readOnly: true
-            volumes:
-              - name: gateway-load-config
-                configMap:
-                  name: inference-gateway-load-config
