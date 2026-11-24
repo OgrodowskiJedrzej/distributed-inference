@@ -1,0 +1,14 @@
+name                = "inference-dev"
+region              = "eu-central-1"
+kubernetes_version  = "REPLACE_WITH_SUPPORTED_EKS_VERSION"
+admin_principal_arn = "arn:aws:iam::ACCOUNT_ID:role/REPLACE_WITH_ADMIN_ROLE"
+allowed_api_cidrs   = ["REPLACE_WITH_YOUR_PUBLIC_IP/32"]
+cpu_instance_type   = "m6i.large"
+cpu_node_count      = 1
+gpu_instance_type   = "g5.xlarge"
+gpu_node_count      = 1
+
+tags = {
+  Project     = "inference-server"
+  Environment = "dev"
+}

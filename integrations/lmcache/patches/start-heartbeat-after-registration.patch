@@ -1,0 +1,16 @@
+diff --git a/lmcache/integration/vllm/vllm_multi_process_adapter.py b/lmcache/integration/vllm/vllm_multi_process_adapter.py
+--- a/lmcache/integration/vllm/vllm_multi_process_adapter.py
++++ b/lmcache/integration/vllm/vllm_multi_process_adapter.py
+@@ -1388,7 +1388,11 @@
+         self._layout_hints = (
+             layout_hints if layout_hints is not None else vllm_layout_hints()
+         )
+-        self._send_register_kv_caches_request(kv_caches)
++        registered = self._send_register_kv_caches_request(kv_caches)
++        if registered and kv_caches and all(
++            tensor.device.type == "cpu" for tensor in kv_caches.values()
++        ):
++            self._ensure_heartbeat_started()
+
+     def unregister_kv_caches(self) -> None:
+         """Drop the server's registration of the KV caches so the engine can

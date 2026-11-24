@@ -1,85 +1,76 @@
-# Inference gateway
+# Inference server
 
-Go API gateway that proxies OpenAI-compatible chat completion requests to vLLM
-Router. The router discovers ready workers through the Kubernetes API and
-balances requests between them.
+An infrastructure project for distributed LLM serving on Kubernetes. I built this project to learn how distributed inference work.
 
-Run a local worker:
+## Architecture
 
-```sh
-docker compose up -d
+The current stack combines a Go API gateway, llm-d routing, vLLM workers,
+Redis admission control, and optional external KV caching through LMCache.
+
+```mermaid
+flowchart TB
+    client["Client"]
+
+    subgraph eks ["Target architecture: Kubernetes on EKS"]
+        gateway["Go Gateway"]
+        router["llm-d Router: prefill and decode selection"]
+        redis["Redis: rate limiting"]
+        cache["LMCache: optional prefix reuse"]
+        observability["Observability: Prometheus, Grafana, Alloy, Loki"]
+
+        subgraph gpuNode ["One node: 4 GPUs"]
+            subgraph prefillWorkers ["Prefill workers: 1 Pod"]
+                prefill["vLLM + GPT-OSS-120B: 2 GPUs, TP=2"]
+            end
+            subgraph decodeWorkers ["Decode workers: 1 Pod"]
+                sidecar["Decode routing sidecar"]
+                decode["vLLM + GPT-OSS-120B: 2 GPUs, TP=2"]
+            end
+        end
+
+        gateway --> router
+        router --> sidecar
+        sidecar -->|Prefill request| prefill
+        sidecar -->|Generate response| decode
+        prefill -->|NIXL KV transfer| decode
+        gateway --- redis
+        prefill -.->|Optional prefix cache| cache
+        router -.-> observability
+    end
+
+    client --> gateway
 ```
 
-Run the gateway:
+The project explores how to design, deploy, and benchmark distributed LLM
+inference systems. A Go gateway handles model policies and rate
+limiting, while llm-d routes requests to vLLM workers. Experiments cover external
+KV-cache reuse with LMCache, worker replacement, and metrics-driven autoscaling
+with KEDA.
 
-```sh
-cd gateway
-go run ./cmd
-```
+Prometheus and Grafana expose service and worker metrics. Alloy collects Pod
+logs and forwards them to Loki.
 
-Run tests:
+AWS infrastructure is defined with Terraform for Amazon EKS, including networking,
+CPU/GPU node groups, and an ECR repository. The diagram shows the planned
+GPT-OSS-120B deployment on one four-GPU node: separate prefill and decode workers,
+each holding a complete model replica sharded across two GPUs. This GPU/P/D
+configuration still requires implementation and validation; current serving
+profiles use mock workers or ARM64 CPU vLLM.
 
-```sh
-cd gateway
-go test ./...
-```
+## Experiments
 
-## Kubernetes
+|  Area | Question to explore |
+|  --- | --- |
+|  External KV cache | Can a replacement worker reuse a previously computed prefix? |
+|  Cross-worker prefix reuse | Can independent model replicas retrieve the same cached prefix? |
+|  Autoscaling | How do scaling and worker participation respond to load? |
+|  Request pipeline | Where do latency, rejection, and worker load appear in the serving path? |
 
-Build the local images and load them into the kind cluster. Kubernetes pulls
-the pinned vLLM Router image from Docker Hub when the router is deployed.
+## Documentation
 
-```sh
-docker build -t mock-vllm:v0.1 workers
-docker build -t inference-gateway:v0.1 gateway
-kind load docker-image mock-vllm:v0.1 inference-gateway:v0.1 --name inference-lab
-```
-
-Deploy the workers, vLLM Router, and gateway:
-
-```sh
-kubectl apply -k deployment/kubernetes
-kubectl rollout status deployment/mock-vllm -n inference
-kubectl rollout status deployment/vllm-router -n inference
-kubectl rollout status deployment/inference-gateway -n inference
-```
-
-On an ARM64 development cluster, deploy a real CPU-backed vLLM worker instead
-of the mock workers:
-
-```sh
-kubectl apply -k deployment/overlays/local-vllm-cpu
-kubectl rollout status deployment/mock-vllm -n inference --timeout=15m
-```
-
-This profile runs one `HuggingFaceTB/SmolLM2-135M-Instruct` instance and preserves the
-`mock-qwen` API model name. The first start downloads the model into a persistent
-cache and can take several minutes.
-
-Expose the gateway locally:
-
-```sh
-kubectl port-forward service/inference-gateway -n inference 8000:8000
-```
-
-Send a request through the gateway:
-
-```sh
-curl http://127.0.0.1:8000/v1/chat/completions \
-  -H 'Content-Type: application/json' \
-  -d '{"model":"mock-qwen","messages":[{"role":"user","content":"Hello"}]}'
-```
-
-Run the end-to-end smoke test against the deployed stack:
-
-```sh
-./tests/e2e/pipeline.sh
-```
-
-The test checks the three Kubernetes rollouts, opens a temporary port-forward,
-and validates chat completion responses passing through the gateway, router,
-and workers. To additionally require mock traffic to reach at least two workers:
-
-```sh
-E2E_REQUESTS=10 E2E_MIN_WORKERS=2 ./tests/e2e/pipeline.sh
-```
+- [Architecture and system boundaries](docs/architecture.md)
+- [Local quickstart and example request](docs/quickstart.md)
+- [Deployment profiles and prerequisites](docs/deployment.md)
+- [EKS infrastructure and GPU scaffold](docs/eks.md)
+- [Logs, dashboards, and request correlation](docs/observability.md)
+- [Development and tests](docs/development.md)

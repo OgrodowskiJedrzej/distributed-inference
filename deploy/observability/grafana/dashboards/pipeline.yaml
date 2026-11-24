@@ -1,0 +1,3296 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: inference-pipeline-experiment
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  inference-pipeline-experiment.json: |-
+    {
+      "uid": "inference-pipeline-experiment",
+      "title": "Inference pipeline experiment",
+      "version": 1,
+      "schemaVersion": 41,
+      "editable": true,
+      "tags": [
+        "inference",
+        "pipeline",
+        "experiment"
+      ],
+      "timezone": "browser",
+      "refresh": "5s",
+      "time": {
+        "from": "now-15m",
+        "to": "now"
+      },
+      "annotations": {
+        "list": []
+      },
+      "templating": {
+        "list": [
+          {
+            "name": "prometheus",
+            "label": "Prometheus",
+            "type": "datasource",
+            "query": "prometheus",
+            "refresh": 1,
+            "options": []
+          },
+          {
+            "name": "run_id",
+            "label": "Run ID",
+            "type": "query",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${prometheus}"
+            },
+            "query": {
+              "query": "label_values(pipeline_client_info{namespace=\"inference\"}, run_id)",
+              "refId": "RunIDs"
+            },
+            "refresh": 2,
+            "sort": 1,
+            "multi": false,
+            "includeAll": false,
+            "options": []
+          },
+          {
+            "name": "worker_pod",
+            "label": "Worker details",
+            "type": "query",
+            "datasource": {
+              "type": "prometheus",
+              "uid": "${prometheus}"
+            },
+            "query": {
+              "query": "label_values(vllm:num_requests_running{namespace=\"inference\",service=\"mock-vllm\"}, pod)",
+              "refId": "WorkerPods"
+            },
+            "refresh": 2,
+            "sort": 1,
+            "multi": true,
+            "includeAll": true,
+            "allValue": ".*",
+            "current": {
+              "text": "All",
+              "value": "$__all"
+            },
+            "options": []
+          },
+          {
+            "name": "component",
+            "label": "Log components",
+            "type": "custom",
+            "query": "inference-gateway,llmd-epp,mock-vllm,kv-cache,pipeline-benchmark",
+            "multi": true,
+            "includeAll": true,
+            "allValue": ".*",
+            "current": {
+              "text": "All",
+              "value": "$__all"
+            },
+            "options": []
+          },
+          {
+            "name": "log_pod",
+            "label": "Log Pods",
+            "type": "query",
+            "datasource": {
+              "type": "loki",
+              "uid": "loki"
+            },
+            "query": "label_values({namespace=\"inference\"}, pod)",
+            "refresh": 2,
+            "sort": 1,
+            "multi": true,
+            "includeAll": true,
+            "allValue": ".*",
+            "current": {
+              "text": "All",
+              "value": "$__all"
+            },
+            "options": []
+          },
+          {
+            "name": "request_id",
+            "label": "Request ID (literal; empty = all)",
+            "type": "textbox",
+            "query": "",
+            "current": {
+              "text": "",
+              "value": ""
+            },
+            "options": []
+          }
+        ]
+      },
+      "panels": [
+        {
+          "id": 1,
+          "title": "Run and data quality",
+          "type": "row",
+          "collapsed": false,
+          "panels": [],
+          "gridPos": {
+            "x": 0,
+            "y": 0,
+            "w": 24,
+            "h": 1
+          }
+        },
+        {
+          "id": 2,
+          "title": "How to read this experiment",
+          "type": "text",
+          "description": "",
+          "gridPos": {
+            "x": 0,
+            "y": 1,
+            "w": 24,
+            "h": 4
+          },
+          "options": {
+            "mode": "markdown",
+            "content": "**One run, shared wall clock.** Select its Run ID and exact time interval; the runner prints a direct link. Client series carry the run ID. Component series cover the deployment and time window, so other traffic is included.\n\nPercentiles are histogram approximations over the rate window. Missing series, undefined ratios and insufficient samples remain **No data**. Add 20 seconds after the run end when inspecting final scraped totals; raw client artifacts contain the exact final records. Worker filters affect worker-detail panels; autoscaling panels always cover all replicas."
+          }
+        },
+        {
+          "id": 3,
+          "title": "Run metadata — last scraped sample in selected interval",
+          "type": "table",
+          "description": "",
+          "gridPos": {
+            "x": 0,
+            "y": 5,
+            "w": 16,
+            "h": 5
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "showHeader": true,
+            "cellHeight": "sm"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "last_over_time(pipeline_client_info{namespace=\"inference\",run_id=\"$run_id\"}[$__range])",
+              "legendFormat": "",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": false,
+              "instant": true,
+              "format": "table"
+            }
+          ],
+          "transformations": [
+            {
+              "id": "organize",
+              "options": {
+                "excludeByName": {
+                  "Time": true,
+                  "Value": true,
+                  "__name__": true,
+                  "job": true,
+                  "instance": true,
+                  "endpoint": true,
+                  "container": true,
+                  "namespace": true,
+                  "pod": true,
+                  "app": true
+                }
+              }
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "title": "Generator phase — last scraped",
+          "type": "stat",
+          "description": "",
+          "gridPos": {
+            "x": 16,
+            "y": 5,
+            "w": 8,
+            "h": 5
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              },
+              "mappings": [
+                {
+                  "type": "value",
+                  "options": {
+                    "0": {
+                      "text": "Initializing"
+                    },
+                    "1": {
+                      "text": "Scheduling"
+                    },
+                    "2": {
+                      "text": "Draining"
+                    },
+                    "3": {
+                      "text": "Complete"
+                    },
+                    "4": {
+                      "text": "Incomplete"
+                    }
+                  }
+                }
+              ]
+            },
+            "overrides": []
+          },
+          "options": {
+            "reduceOptions": {
+              "calcs": [
+                "lastNotNull"
+              ],
+              "values": false
+            },
+            "textMode": "value",
+            "colorMode": "value",
+            "graphMode": "none"
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "last_over_time(pipeline_client_phase{namespace=\"inference\",run_id=\"$run_id\"}[$__range])",
+              "legendFormat": "phase",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 5,
+          "title": "Scrape availability — components",
+          "type": "timeseries",
+          "description": "1 = successful scrape; 0 = scrape failure. An absent target is not zero and does not prove a component is healthy.",
+          "gridPos": {
+            "x": 0,
+            "y": 10,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "up{namespace=\"inference\",service=~\"inference-gateway|llmd-epp|mock-vllm|kv-cache\"}",
+              "legendFormat": "{{service}} / {{pod}}",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 6,
+          "title": "Client stage and freshness",
+          "type": "timeseries",
+          "description": "Stage is zero-based. Missing client series after Pod removal are expected. Freshness measures the last scrape, not progress of the event loop.",
+          "gridPos": {
+            "x": 12,
+            "y": 10,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "pipeline_client_stage{namespace=\"inference\",run_id=\"$run_id\"}",
+              "legendFormat": "stage (zero-based)",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            },
+            {
+              "refId": "B",
+              "expr": "time() - max(timestamp(pipeline_client_phase{namespace=\"inference\",run_id=\"$run_id\"}))",
+              "legendFormat": "sample age (seconds)",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 7,
+          "title": "Load and outcomes",
+          "type": "row",
+          "collapsed": false,
+          "panels": [],
+          "gridPos": {
+            "x": 0,
+            "y": 17,
+            "w": 24,
+            "h": 1
+          }
+        },
+        {
+          "id": 8,
+          "title": "Offered, sent and completed requests/s",
+          "type": "timeseries",
+          "description": "",
+          "gridPos": {
+            "x": 0,
+            "y": 18,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "max(pipeline_client_target_requests_per_second{namespace=\"inference\",run_id=\"$run_id\"})",
+              "legendFormat": "target RPS",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            },
+            {
+              "refId": "B",
+              "expr": "sum(rate(pipeline_client_scheduled_total{namespace=\"inference\",run_id=\"$run_id\"}[$__rate_interval]))",
+              "legendFormat": "scheduled",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            },
+            {
+              "refId": "C",
+              "expr": "sum(rate(pipeline_client_sent_total{namespace=\"inference\",run_id=\"$run_id\"}[$__rate_interval]))",
+              "legendFormat": "sent",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            },
+            {
+              "refId": "D",
+              "expr": "sum(rate(pipeline_client_completed_total{namespace=\"inference\",run_id=\"$run_id\",outcome=\"success\"}[$__rate_interval]))",
+              "legendFormat": "successful",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            },
+            {
+              "refId": "E",
+              "expr": "sum(rate(pipeline_client_completed_total{namespace=\"inference\",run_id=\"$run_id\"}[$__rate_interval]))",
+              "legendFormat": "all completed",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 9,
+          "title": "Request outcomes/s — HTTP and transport",
+          "type": "timeseries",
+          "description": "Timeouts and cancelled/broken streams can retain HTTP 200; status 200 alone does not mean a successful generation.",
+          "gridPos": {
+            "x": 12,
+            "y": 18,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (outcome,http_status,reason) (rate(pipeline_client_completed_total{namespace=\"inference\",run_id=\"$run_id\"}[$__rate_interval]))",
+              "legendFormat": "{{outcome}} / HTTP {{http_status}} / {{reason}}",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 10,
+          "title": "Generator in-flight and unsent arrivals/s",
+          "type": "timeseries",
+          "description": "Client concurrency cap is 256; arrivals >100 ms late are unsent rather than replayed in a catch-up burst. Unsent arrivals are not gateway rejections.",
+          "gridPos": {
+            "x": 0,
+            "y": 25,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(pipeline_client_in_flight{namespace=\"inference\",run_id=\"$run_id\"})",
+              "legendFormat": "in-flight requests",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            },
+            {
+              "refId": "B",
+              "expr": "sum by (reason) (rate(pipeline_client_unsent_total{namespace=\"inference\",run_id=\"$run_id\"}[$__rate_interval]))",
+              "legendFormat": "unsent/s / {{reason}}",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 11,
+          "title": "Output tokens/s and usage coverage",
+          "type": "timeseries",
+          "description": "Output token rate is hidden if the window has missing usage or no usage-covered successes. Usage-coverage series are requests/s, not tokens/s.",
+          "gridPos": {
+            "x": 12,
+            "y": 25,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(rate(pipeline_client_output_tokens_total{namespace=\"inference\",run_id=\"$run_id\"}[$__rate_interval])) and (sum(rate(pipeline_client_usage_requests_total{namespace=\"inference\",run_id=\"$run_id\"}[$__rate_interval])) > 0) and (sum(rate(pipeline_client_missing_usage_total{namespace=\"inference\",run_id=\"$run_id\"}[$__rate_interval])) == 0)",
+              "legendFormat": "output tokens/s — complete usage coverage",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            },
+            {
+              "refId": "B",
+              "expr": "sum(rate(pipeline_client_usage_requests_total{namespace=\"inference\",run_id=\"$run_id\"}[$__rate_interval]))",
+              "legendFormat": "successful requests/s with usage",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            },
+            {
+              "refId": "C",
+              "expr": "sum(rate(pipeline_client_missing_usage_total{namespace=\"inference\",run_id=\"$run_id\"}[$__rate_interval]))",
+              "legendFormat": "successful requests/s without usage",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 12,
+          "title": "Last scraped cumulative request counts",
+          "type": "timeseries",
+          "description": "Raw cumulative counters sampled by Prometheus, not exact artifact totals. Extend the end time by 20 seconds for the final scrape. New outcome series appear when first observed.",
+          "gridPos": {
+            "x": 0,
+            "y": 32,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(last_over_time(pipeline_client_scheduled_total{namespace=\"inference\",run_id=\"$run_id\"}[$__range]))",
+              "legendFormat": "scheduled",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            },
+            {
+              "refId": "B",
+              "expr": "sum(last_over_time(pipeline_client_sent_total{namespace=\"inference\",run_id=\"$run_id\"}[$__range]))",
+              "legendFormat": "sent",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            },
+            {
+              "refId": "C",
+              "expr": "sum(last_over_time(pipeline_client_completed_total{namespace=\"inference\",run_id=\"$run_id\",outcome=\"success\"}[$__range]))",
+              "legendFormat": "successful",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            },
+            {
+              "refId": "D",
+              "expr": "sum(last_over_time(pipeline_client_completed_total{namespace=\"inference\",run_id=\"$run_id\",outcome!=\"success\"}[$__range]))",
+              "legendFormat": "failed/cancelled",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            },
+            {
+              "refId": "E",
+              "expr": "sum(last_over_time(pipeline_client_unsent_total{namespace=\"inference\",run_id=\"$run_id\"}[$__range]))",
+              "legendFormat": "unsent",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 13,
+          "title": "Admission rejections/s — client response reason",
+          "type": "timeseries",
+          "description": "Reasons come from the gateway API error body. Unknown or malformed bodies retain the HTTP error with reason=other. No retry is performed.",
+          "gridPos": {
+            "x": 12,
+            "y": 32,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (reason) (rate(pipeline_client_completed_total{namespace=\"inference\",run_id=\"$run_id\",http_status=\"429\"}[$__rate_interval]))",
+              "legendFormat": "{{reason}}",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 14,
+          "title": "Client latency and generator capacity",
+          "type": "row",
+          "collapsed": false,
+          "panels": [],
+          "gridPos": {
+            "x": 0,
+            "y": 39,
+            "w": 24,
+            "h": 1
+          }
+        },
+        {
+          "id": 15,
+          "title": "Client TTFT — successful streams",
+          "type": "timeseries",
+          "description": "",
+          "gridPos": {
+            "x": 0,
+            "y": 40,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "histogram_quantile(0.5, sum by (le) (rate(pipeline_client_ttft_seconds_bucket{namespace=\"inference\",run_id=\"$run_id\"}[$__rate_interval])))",
+              "legendFormat": "p50",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            },
+            {
+              "refId": "B",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(pipeline_client_ttft_seconds_bucket{namespace=\"inference\",run_id=\"$run_id\"}[$__rate_interval])))",
+              "legendFormat": "p95",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            },
+            {
+              "refId": "C",
+              "expr": "histogram_quantile(0.99, sum by (le) (rate(pipeline_client_ttft_seconds_bucket{namespace=\"inference\",run_id=\"$run_id\"}[$__rate_interval])))",
+              "legendFormat": "p99",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 16,
+          "title": "Client E2E — successful streams",
+          "type": "timeseries",
+          "description": "Request start to last nonempty content chunk. Trailing usage/DONE processing is excluded.",
+          "gridPos": {
+            "x": 12,
+            "y": 40,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "histogram_quantile(0.5, sum by (le) (rate(pipeline_client_e2e_seconds_bucket{namespace=\"inference\",run_id=\"$run_id\"}[$__rate_interval])))",
+              "legendFormat": "p50",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            },
+            {
+              "refId": "B",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(pipeline_client_e2e_seconds_bucket{namespace=\"inference\",run_id=\"$run_id\"}[$__rate_interval])))",
+              "legendFormat": "p95",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            },
+            {
+              "refId": "C",
+              "expr": "histogram_quantile(0.99, sum by (le) (rate(pipeline_client_e2e_seconds_bucket{namespace=\"inference\",run_id=\"$run_id\"}[$__rate_interval])))",
+              "legendFormat": "p99",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 17,
+          "title": "Client chunk intervals — not individual tokens",
+          "type": "timeseries",
+          "description": "Intervals pooled across successful streams; empty role/finish chunks do not count.",
+          "gridPos": {
+            "x": 0,
+            "y": 47,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "histogram_quantile(0.5, sum by (le) (rate(pipeline_client_chunk_interval_seconds_bucket{namespace=\"inference\",run_id=\"$run_id\"}[$__rate_interval])))",
+              "legendFormat": "p50",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            },
+            {
+              "refId": "B",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(pipeline_client_chunk_interval_seconds_bucket{namespace=\"inference\",run_id=\"$run_id\"}[$__rate_interval])))",
+              "legendFormat": "p95",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            },
+            {
+              "refId": "C",
+              "expr": "histogram_quantile(0.99, sum by (le) (rate(pipeline_client_chunk_interval_seconds_bucket{namespace=\"inference\",run_id=\"$run_id\"}[$__rate_interval])))",
+              "legendFormat": "p99",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 18,
+          "title": "Protocol tail — last content to DONE",
+          "type": "timeseries",
+          "description": "",
+          "gridPos": {
+            "x": 12,
+            "y": 47,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "histogram_quantile(0.5, sum by (le) (rate(pipeline_client_protocol_tail_seconds_bucket{namespace=\"inference\",run_id=\"$run_id\"}[$__rate_interval])))",
+              "legendFormat": "p50",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            },
+            {
+              "refId": "B",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(pipeline_client_protocol_tail_seconds_bucket{namespace=\"inference\",run_id=\"$run_id\"}[$__rate_interval])))",
+              "legendFormat": "p95",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            },
+            {
+              "refId": "C",
+              "expr": "histogram_quantile(0.99, sum by (le) (rate(pipeline_client_protocol_tail_seconds_bucket{namespace=\"inference\",run_id=\"$run_id\"}[$__rate_interval])))",
+              "legendFormat": "p99",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 19,
+          "title": "Latency observations in rate window",
+          "type": "timeseries",
+          "description": "Prometheus increase is extrapolated and can be fractional. Newly appearing series can miss their first increment. Small sample windows make tail percentiles unstable.",
+          "gridPos": {
+            "x": 0,
+            "y": 54,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(increase(pipeline_client_ttft_seconds_count{namespace=\"inference\",run_id=\"$run_id\"}[$__rate_interval]))",
+              "legendFormat": "successful requests",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            },
+            {
+              "refId": "B",
+              "expr": "sum(increase(pipeline_client_chunk_interval_seconds_count{namespace=\"inference\",run_id=\"$run_id\"}[$__rate_interval]))",
+              "legendFormat": "content intervals",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 20,
+          "title": "Generator scheduler lag",
+          "type": "timeseries",
+          "description": "Measured after prompt preparation. Includes arrivals that were dropped; >100 ms is recorded as unsent.",
+          "gridPos": {
+            "x": 12,
+            "y": 54,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "histogram_quantile(0.5, sum by (le) (rate(pipeline_client_scheduler_lag_seconds_bucket{namespace=\"inference\",run_id=\"$run_id\"}[$__rate_interval])))",
+              "legendFormat": "p50",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            },
+            {
+              "refId": "B",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(pipeline_client_scheduler_lag_seconds_bucket{namespace=\"inference\",run_id=\"$run_id\"}[$__rate_interval])))",
+              "legendFormat": "p95",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            },
+            {
+              "refId": "C",
+              "expr": "histogram_quantile(0.99, sum by (le) (rate(pipeline_client_scheduler_lag_seconds_bucket{namespace=\"inference\",run_id=\"$run_id\"}[$__rate_interval])))",
+              "legendFormat": "p99",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 21,
+          "title": "Generator CPU consumption",
+          "type": "timeseries",
+          "description": "The generator has a 1 CPU limit and shares hardware with serving. CPU saturation or scheduler lag can limit offered load.",
+          "gridPos": {
+            "x": 0,
+            "y": 61,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "cores",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(rate(pipeline_client_process_cpu_seconds_total{namespace=\"inference\",run_id=\"$run_id\"}[$__rate_interval]))",
+              "legendFormat": "CPU cores",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 22,
+          "title": "Generator resident memory",
+          "type": "timeseries",
+          "description": "",
+          "gridPos": {
+            "x": 12,
+            "y": 61,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(pipeline_client_process_resident_memory_bytes{namespace=\"inference\",run_id=\"$run_id\"})",
+              "legendFormat": "RSS",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 23,
+          "title": "Gateway",
+          "type": "row",
+          "collapsed": false,
+          "panels": [],
+          "gridPos": {
+            "x": 0,
+            "y": 68,
+            "w": 24,
+            "h": 1
+          }
+        },
+        {
+          "id": 24,
+          "title": "Gateway chat requests/s by HTTP status",
+          "type": "timeseries",
+          "description": "",
+          "gridPos": {
+            "x": 0,
+            "y": 69,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (code) (rate(gateway_http_requests_total{namespace=\"inference\",service=\"inference-gateway\",route=\"/v1/chat/completions\"}[$__rate_interval]))",
+              "legendFormat": "HTTP {{code}}",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 25,
+          "title": "Gateway HTTP duration — all chat outcomes",
+          "type": "timeseries",
+          "description": "Includes fast rejected/error responses. Compare with client success-only latency and the error rate; lower gateway percentiles can reflect more rejections.",
+          "gridPos": {
+            "x": 12,
+            "y": 69,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "histogram_quantile(0.5, sum by (le) (rate(gateway_http_request_duration_seconds_bucket{namespace=\"inference\",service=\"inference-gateway\",route=\"/v1/chat/completions\"}[$__rate_interval])))",
+              "legendFormat": "p50",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            },
+            {
+              "refId": "B",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(gateway_http_request_duration_seconds_bucket{namespace=\"inference\",service=\"inference-gateway\",route=\"/v1/chat/completions\"}[$__rate_interval])))",
+              "legendFormat": "p95",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            },
+            {
+              "refId": "C",
+              "expr": "histogram_quantile(0.99, sum by (le) (rate(gateway_http_request_duration_seconds_bucket{namespace=\"inference\",service=\"inference-gateway\",route=\"/v1/chat/completions\"}[$__rate_interval])))",
+              "legendFormat": "p99",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 26,
+          "title": "Gateway chat requests in flight",
+          "type": "timeseries",
+          "description": "",
+          "gridPos": {
+            "x": 0,
+            "y": 76,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(gateway_http_requests_in_flight{namespace=\"inference\",service=\"inference-gateway\",route=\"/v1/chat/completions\"})",
+              "legendFormat": "in flight",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 27,
+          "title": "Gateway CPU and RSS",
+          "type": "timeseries",
+          "description": "CPU is in cores; memory is in MiB. No Kubernetes container CPU/throttling/GPU telemetry is assumed.",
+          "gridPos": {
+            "x": 12,
+            "y": 76,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(rate(process_cpu_seconds_total{namespace=\"inference\",service=\"inference-gateway\"}[$__rate_interval]))",
+              "legendFormat": "CPU cores",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            },
+            {
+              "refId": "B",
+              "expr": "sum(process_resident_memory_bytes{namespace=\"inference\",service=\"inference-gateway\"}) / 1024 / 1024",
+              "legendFormat": "RSS MiB",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 28,
+          "title": "Routing and worker execution",
+          "type": "row",
+          "collapsed": false,
+          "panels": [],
+          "gridPos": {
+            "x": 0,
+            "y": 83,
+            "w": 24,
+            "h": 1
+          }
+        },
+        {
+          "id": 29,
+          "title": "Router ready endpoints",
+          "type": "timeseries",
+          "description": "Ready endpoints observed by llm-d, not desired replicas. Missing metrics are not zero endpoints.",
+          "gridPos": {
+            "x": 0,
+            "y": 84,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "max(llm_d_epp_ready_endpoints{namespace=\"inference\",service=\"llmd-epp\",name=\"llmd\"})",
+              "legendFormat": "active workers",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 30,
+          "title": "Completed work per worker/s",
+          "type": "timeseries",
+          "description": "Completed requests per worker, not the exact distribution of router dispatch decisions. Requests can finish long after dispatch.",
+          "gridPos": {
+            "x": 12,
+            "y": 84,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (pod) (rate(vllm:request_success_total{namespace=\"inference\",service=\"mock-vllm\",model_name=\"mock-qwen\",pod=~\"${worker_pod:regex}\"}[$__rate_interval]))",
+              "legendFormat": "{{pod}}",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 31,
+          "title": "Worker running requests",
+          "type": "timeseries",
+          "description": "",
+          "gridPos": {
+            "x": 0,
+            "y": 91,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (pod) (vllm:num_requests_running{namespace=\"inference\",service=\"mock-vllm\",model_name=\"mock-qwen\",pod=~\"${worker_pod:regex}\"})",
+              "legendFormat": "{{pod}}",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 32,
+          "title": "Worker waiting requests",
+          "type": "timeseries",
+          "description": "",
+          "gridPos": {
+            "x": 12,
+            "y": 91,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (pod,reason) (vllm:num_requests_waiting_by_reason{namespace=\"inference\",service=\"mock-vllm\",model_name=\"mock-qwen\",pod=~\"${worker_pod:regex}\"})",
+              "legendFormat": "{{pod}} / {{reason}}",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            },
+            {
+              "refId": "B",
+              "expr": "sum by (pod) (vllm:num_requests_waiting{namespace=\"inference\",service=\"mock-vllm\",model_name=\"mock-qwen\",pod=~\"${worker_pod:regex}\"})",
+              "legendFormat": "{{pod}} / total",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 33,
+          "title": "Worker prompt/generation tokens/s",
+          "type": "timeseries",
+          "description": "Worker counters are distinct from client usage-derived throughput and can include work for requests that later fail at the client.",
+          "gridPos": {
+            "x": 0,
+            "y": 98,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (pod) (rate(vllm:prompt_tokens_total{namespace=\"inference\",service=\"mock-vllm\",model_name=\"mock-qwen\",pod=~\"${worker_pod:regex}\"}[$__rate_interval]))",
+              "legendFormat": "{{pod}} / prompt tokens/s",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            },
+            {
+              "refId": "B",
+              "expr": "sum by (pod) (rate(vllm:generation_tokens_total{namespace=\"inference\",service=\"mock-vllm\",model_name=\"mock-qwen\",pod=~\"${worker_pod:regex}\"}[$__rate_interval]))",
+              "legendFormat": "{{pod}} / generation tokens/s",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 34,
+          "title": "Worker preemptions/s",
+          "type": "timeseries",
+          "description": "",
+          "gridPos": {
+            "x": 12,
+            "y": 98,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (pod) (rate(vllm:num_preemptions_total{namespace=\"inference\",service=\"mock-vllm\",model_name=\"mock-qwen\",pod=~\"${worker_pod:regex}\"}[$__rate_interval]))",
+              "legendFormat": "{{pod}}",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 35,
+          "title": "Worker queue time p95",
+          "type": "timeseries",
+          "description": "",
+          "gridPos": {
+            "x": 0,
+            "y": 105,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "histogram_quantile(0.95, sum by (le,pod) (rate(vllm:request_queue_time_seconds_bucket{namespace=\"inference\",service=\"mock-vllm\",model_name=\"mock-qwen\",pod=~\"${worker_pod:regex}\"}[$__rate_interval])))",
+              "legendFormat": "{{pod}}",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 36,
+          "title": "Worker prefill/decode time p95",
+          "type": "timeseries",
+          "description": "Direct worker histograms. Do not subtract these percentiles from client or gateway percentiles to infer another stage duration.",
+          "gridPos": {
+            "x": 12,
+            "y": 105,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "histogram_quantile(0.95, sum by (le,pod) (rate(vllm:request_prefill_time_seconds_bucket{namespace=\"inference\",service=\"mock-vllm\",model_name=\"mock-qwen\",pod=~\"${worker_pod:regex}\"}[$__rate_interval])))",
+              "legendFormat": "{{pod}} / prefill",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            },
+            {
+              "refId": "B",
+              "expr": "histogram_quantile(0.95, sum by (le,pod) (rate(vllm:request_decode_time_seconds_bucket{namespace=\"inference\",service=\"mock-vllm\",model_name=\"mock-qwen\",pod=~\"${worker_pod:regex}\"}[$__rate_interval])))",
+              "legendFormat": "{{pod}} / decode",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 37,
+          "title": "Local prefix cache and LMCache",
+          "type": "row",
+          "collapsed": false,
+          "panels": [],
+          "gridPos": {
+            "x": 0,
+            "y": 112,
+            "w": 24,
+            "h": 1
+          }
+        },
+        {
+          "id": 38,
+          "title": "Local prefix-cache token hit ratio",
+          "type": "timeseries",
+          "description": "Token-weighted hit ratio; not request hit rate. Zero queries or missing counters produce No data.",
+          "gridPos": {
+            "x": 0,
+            "y": 113,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (pod) (rate(vllm:prefix_cache_hits_total{namespace=\"inference\",service=\"mock-vllm\",model_name=\"mock-qwen\",pod=~\"${worker_pod:regex}\"}[$__rate_interval])) / (sum by (pod) (rate(vllm:prefix_cache_queries_total{namespace=\"inference\",service=\"mock-vllm\",model_name=\"mock-qwen\",pod=~\"${worker_pod:regex}\"}[$__rate_interval])) > 0)",
+              "legendFormat": "{{pod}}",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 39,
+          "title": "External prefix-cache token hit ratio",
+          "type": "timeseries",
+          "description": "Token-weighted hit ratio; not request hit rate. Zero queries or missing counters produce No data.",
+          "gridPos": {
+            "x": 12,
+            "y": 113,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (pod) (rate(vllm:external_prefix_cache_hits_total{namespace=\"inference\",service=\"mock-vllm\",model_name=\"mock-qwen\",pod=~\"${worker_pod:regex}\"}[$__rate_interval])) / (sum by (pod) (rate(vllm:external_prefix_cache_queries_total{namespace=\"inference\",service=\"mock-vllm\",model_name=\"mock-qwen\",pod=~\"${worker_pod:regex}\"}[$__rate_interval])) > 0)",
+              "legendFormat": "{{pod}}",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 40,
+          "title": "Worker KV cache occupancy",
+          "type": "timeseries",
+          "description": "vLLM reports this metric as a 0–1 fraction despite the perc suffix.",
+          "gridPos": {
+            "x": 0,
+            "y": 120,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "max by (pod) (vllm:kv_cache_usage_perc{namespace=\"inference\",service=\"mock-vllm\",model_name=\"mock-qwen\",pod=~\"${worker_pod:regex}\"})",
+              "legendFormat": "{{pod}}",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 41,
+          "title": "LMCache L1 occupancy",
+          "type": "timeseries",
+          "description": "",
+          "gridPos": {
+            "x": 12,
+            "y": 120,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "max(lmcache_mp_l1_usage_ratio{namespace=\"inference\",service=\"kv-cache\"})",
+              "legendFormat": "L1 usage",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 42,
+          "title": "LMCache L1 memory",
+          "type": "timeseries",
+          "description": "",
+          "gridPos": {
+            "x": 0,
+            "y": 127,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "bytes",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(lmcache_mp_l1_memory_usage_bytes{namespace=\"inference\",service=\"kv-cache\"})",
+              "legendFormat": "L1 resident objects",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            },
+            {
+              "refId": "B",
+              "expr": "sum(lmcache_mp_l1_staging_bytes{namespace=\"inference\",service=\"kv-cache\"})",
+              "legendFormat": "L1 staging",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 43,
+          "title": "LMCache L1 chunk operations/s",
+          "type": "timeseries",
+          "description": "",
+          "gridPos": {
+            "x": 12,
+            "y": 127,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(rate(lmcache_mp_l1_read_chunks_total{namespace=\"inference\",service=\"kv-cache\"}[$__rate_interval]))",
+              "legendFormat": "read chunks/s",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            },
+            {
+              "refId": "B",
+              "expr": "sum(rate(lmcache_mp_l1_write_chunks_total{namespace=\"inference\",service=\"kv-cache\"}[$__rate_interval]))",
+              "legendFormat": "write chunks/s",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 44,
+          "title": "LMCache lookup token hit ratio",
+          "type": "timeseries",
+          "description": "LMCache counts chunk-aligned lookup tokens and the contiguous cached prefix. Its denominator differs from whole-prompt and vLLM local/external cache counters.",
+          "gridPos": {
+            "x": 0,
+            "y": 134,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percentunit",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(rate(lmcache_mp_lookup_hit_tokens_total{namespace=\"inference\",service=\"kv-cache\"}[$__rate_interval])) / (sum(rate(lmcache_mp_lookup_requested_tokens_total{namespace=\"inference\",service=\"kv-cache\"}[$__rate_interval])) > 0)",
+              "legendFormat": "chunk-aligned lookup token hits",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 45,
+          "title": "Worker LMCache lookup latency",
+          "type": "timeseries",
+          "description": "Direct connector lookup histogram, aggregated across selected workers.",
+          "gridPos": {
+            "x": 12,
+            "y": 134,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "s",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "histogram_quantile(0.5, sum by (le) (rate(vllm:lmcache_mp_lookup_duration_seconds_bucket{namespace=\"inference\",service=\"mock-vllm\",model_name=\"mock-qwen\",pod=~\"${worker_pod:regex}\"}[$__rate_interval])))",
+              "legendFormat": "p50",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            },
+            {
+              "refId": "B",
+              "expr": "histogram_quantile(0.95, sum by (le) (rate(vllm:lmcache_mp_lookup_duration_seconds_bucket{namespace=\"inference\",service=\"mock-vllm\",model_name=\"mock-qwen\",pod=~\"${worker_pod:regex}\"}[$__rate_interval])))",
+              "legendFormat": "p95",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            },
+            {
+              "refId": "C",
+              "expr": "histogram_quantile(0.99, sum by (le) (rate(vllm:lmcache_mp_lookup_duration_seconds_bucket{namespace=\"inference\",service=\"mock-vllm\",model_name=\"mock-qwen\",pod=~\"${worker_pod:regex}\"}[$__rate_interval])))",
+              "legendFormat": "p99",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 46,
+          "title": "LMCache event queue depth and drops/s",
+          "type": "timeseries",
+          "description": "",
+          "gridPos": {
+            "x": 0,
+            "y": 141,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum(lmcache_mp_event_bus_queue_depth{namespace=\"inference\",service=\"kv-cache\"})",
+              "legendFormat": "queue depth",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            },
+            {
+              "refId": "B",
+              "expr": "sum(rate(lmcache_mp_event_bus_dropped_events_total{namespace=\"inference\",service=\"kv-cache\"}[$__rate_interval]))",
+              "legendFormat": "dropped events/s",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 47,
+          "title": "Computed prefill KV tokens/s",
+          "type": "timeseries",
+          "description": "Newly computed prefill KV tokens, excluding cached tokens. Useful alongside hit ratios rather than assuming a hit guarantees a latency gain.",
+          "gridPos": {
+            "x": 12,
+            "y": 141,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (pod) (rate(vllm:request_prefill_kv_computed_tokens_sum{namespace=\"inference\",service=\"mock-vllm\",model_name=\"mock-qwen\",pod=~\"${worker_pod:regex}\"}[$__rate_interval]))",
+              "legendFormat": "{{pod}}",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 48,
+          "title": "Autoscaling and Pod lifecycle — all workers",
+          "type": "row",
+          "collapsed": false,
+          "panels": [],
+          "gridPos": {
+            "x": 0,
+            "y": 148,
+            "w": 24,
+            "h": 1
+          }
+        },
+        {
+          "id": 49,
+          "title": "Autoscaling load signal — healthy running + waiting",
+          "type": "timeseries",
+          "description": "Matches the current ScaledObject query: all healthy workers. AverageValue target is 2 requests per replica in the repository policy; this panel does not prove KEDA fetched the metric successfully.",
+          "gridPos": {
+            "x": 0,
+            "y": 149,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum((vllm:num_requests_running{namespace=\"inference\",service=\"mock-vllm\",model_name=\"mock-qwen\"} + vllm:num_requests_waiting{namespace=\"inference\",service=\"mock-vllm\",model_name=\"mock-qwen\"}) and on(namespace,pod,service) (up{namespace=\"inference\",service=\"mock-vllm\"} == 1))",
+              "legendFormat": "running + waiting",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 50,
+          "title": "HPA current and desired replicas",
+          "type": "timeseries",
+          "description": "Uses the default HPA name generated for ScaledObject vllm-worker. No data is expected when autoscaling is disabled.",
+          "gridPos": {
+            "x": 12,
+            "y": 149,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "max(kube_horizontalpodautoscaler_status_current_replicas{namespace=\"inference\",horizontalpodautoscaler=\"keda-hpa-vllm-worker\"})",
+              "legendFormat": "HPA current",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            },
+            {
+              "refId": "B",
+              "expr": "max(kube_horizontalpodautoscaler_status_desired_replicas{namespace=\"inference\",horizontalpodautoscaler=\"keda-hpa-vllm-worker\"})",
+              "legendFormat": "HPA desired",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 51,
+          "title": "Worker Deployment desired, ready and available",
+          "type": "timeseries",
+          "description": "",
+          "gridPos": {
+            "x": 0,
+            "y": 156,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "max(kube_deployment_spec_replicas{namespace=\"inference\",deployment=\"mock-vllm\"})",
+              "legendFormat": "desired",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            },
+            {
+              "refId": "B",
+              "expr": "max(kube_deployment_status_replicas_ready{namespace=\"inference\",deployment=\"mock-vllm\"})",
+              "legendFormat": "ready",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            },
+            {
+              "refId": "C",
+              "expr": "max(kube_deployment_status_replicas_available{namespace=\"inference\",deployment=\"mock-vllm\"})",
+              "legendFormat": "available",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 52,
+          "title": "HPA conditions",
+          "type": "timeseries",
+          "description": "HPA reported conditions, not a log of every scaler decision. Missing HPA series remain No data.",
+          "gridPos": {
+            "x": 12,
+            "y": 156,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "max by (condition,status) (kube_horizontalpodautoscaler_status_condition{namespace=\"inference\",horizontalpodautoscaler=\"keda-hpa-vllm-worker\"})",
+              "legendFormat": "{{condition}} / {{status}}",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 53,
+          "title": "Worker Pod phases",
+          "type": "timeseries",
+          "description": "",
+          "gridPos": {
+            "x": 0,
+            "y": 163,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "max by (pod,phase) (kube_pod_status_phase{namespace=\"inference\",pod=~\"mock-vllm-.*\"})",
+              "legendFormat": "{{pod}} / {{phase}}",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 54,
+          "title": "Worker container restarts in rate window",
+          "type": "timeseries",
+          "description": "",
+          "gridPos": {
+            "x": 12,
+            "y": 163,
+            "w": 12,
+            "h": 7
+          },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${prometheus}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "unit": "short",
+              "noValue": "No data",
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "spanNulls": false
+              }
+            },
+            "overrides": []
+          },
+          "options": {
+            "legend": {
+              "displayMode": "table",
+              "placement": "bottom",
+              "calcs": [
+                "lastNotNull"
+              ]
+            },
+            "tooltip": {
+              "mode": "multi",
+              "sort": "desc"
+            }
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (pod) (increase(kube_pod_container_status_restarts_total{namespace=\"inference\",pod=~\"mock-vllm-.*\",container=\"worker\"}[$__rate_interval]))",
+              "legendFormat": "{{pod}}",
+              "editorMode": "code",
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${prometheus}"
+              },
+              "range": true
+            }
+          ]
+        },
+        {
+          "id": 55,
+          "title": "Logs — selected interval",
+          "type": "row",
+          "collapsed": false,
+          "panels": [],
+          "gridPos": {
+            "x": 0,
+            "y": 170,
+            "w": 24,
+            "h": 1
+          }
+        },
+        {
+          "id": 56,
+          "title": "Component logs — time and deployment correlation",
+          "type": "logs",
+          "description": "Raw-line literal request-ID search. Empty means all records; it is not a structured join or distributed tracing. Upstream components may omit IDs. Component logs are not filtered by run ID.",
+          "gridPos": {
+            "x": 0,
+            "y": 171,
+            "w": 24,
+            "h": 12
+          },
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "options": {
+            "dedupStrategy": "none",
+            "enableLogDetails": true,
+            "prettifyLogMessage": true,
+            "showCommonLabels": false,
+            "showLabels": false,
+            "showTime": true,
+            "sortOrder": "Ascending",
+            "wrapLogMessage": true
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "editorMode": "code",
+              "queryType": "range",
+              "expr": "{namespace=\"inference\",pod=~\"${log_pod:regex}\"} | label_format app=\"{{ if hasPrefix \\\"llmd-epp-\\\" .pod }}llmd-epp{{ else }}{{ .app }}{{ end }}\" | app=~\"${component:regex}\" |= ${request_id:doublequote}"
+            }
+          ]
+        },
+        {
+          "id": 57,
+          "title": "Client records — exact selected run ID",
+          "type": "logs",
+          "description": "Exact JSON run_id filter for the benchmark client. No prompt or response text is logged. Request records include returned X-Request-ID where available.",
+          "gridPos": {
+            "x": 0,
+            "y": 183,
+            "w": 24,
+            "h": 10
+          },
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "options": {
+            "dedupStrategy": "none",
+            "enableLogDetails": true,
+            "prettifyLogMessage": true,
+            "showCommonLabels": false,
+            "showLabels": false,
+            "showTime": true,
+            "sortOrder": "Ascending",
+            "wrapLogMessage": true
+          },
+          "targets": [
+            {
+              "refId": "A",
+              "datasource": {
+                "type": "loki",
+                "uid": "loki"
+              },
+              "editorMode": "code",
+              "queryType": "range",
+              "expr": "{namespace=\"inference\",app=\"pipeline-benchmark\"} | json | __error__=\"\" | run_id=\"$run_id\" |= ${request_id:doublequote}"
+            }
+          ]
+        }
+      ],
+      "description": "Single-run pipeline telemetry. Server metrics are correlated by deployment and wall clock, not run ID. Missing data remain missing."
+    }

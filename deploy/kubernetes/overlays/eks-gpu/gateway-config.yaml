@@ -1,0 +1,22 @@
+server:
+  host: 0.0.0.0
+  port: "8000"
+
+redis:
+  address: inference-redis-master:6379
+  password: ""
+  db: 0
+
+rate_limit:
+  requests_per_minute: 60
+  tokens_per_minute: 100000
+  max_concurrency: 8
+  reservation_ttl: 10m
+
+models:
+  mock-qwen:
+    max_tokens: 512
+  gpt-oss-120b:
+    max_tokens: 4096
+
+upstream: http://llmd-epp:8081

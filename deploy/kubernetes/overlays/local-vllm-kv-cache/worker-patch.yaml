@@ -1,0 +1,41 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mock-vllm
+  namespace: inference
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+    rollingUpdate: null
+  template:
+    spec:
+      containers:
+        - name: worker
+          image: inference-vllm-lmcache:0.31.0-d0959e0
+          args:
+            - HuggingFaceTB/SmolLM2-135M-Instruct
+            - --revision
+            - 12fd25f77366fa6b3b4b768ec3050bf629380bac
+            - --served-model-name
+            - mock-qwen
+            - --host
+            - 0.0.0.0
+            - --port
+            - "8000"
+            - --dtype
+            - float32
+            - --max-model-len
+            - "1024"
+            - --max-num-seqs
+            - "2"
+            - --kv-cache-memory-bytes
+            - 128M
+            - --no-enable-prefix-caching
+            - --disable-hybrid-kv-cache-manager
+            - --enforce-eager
+            - --kv-transfer-config
+            - '{"kv_connector":"LMCacheMPConnector","kv_role":"kv_both","kv_connector_module_path":"lmcache.integration.vllm.lmcache_mp_connector","kv_connector_extra_config":{"lmcache.mp.host":"tcp://kv-cache.inference.svc","lmcache.mp.port":5555}}'
+          env:
+            - name: LMCACHE_MP_TRANSFER_MODE
+              value: engine_driven

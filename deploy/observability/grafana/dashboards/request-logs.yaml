@@ -1,0 +1,71 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: inference-request-logs
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  inference-request-logs.json: |-
+    {
+      "annotations": {"list": []},
+      "editable": true,
+      "panels": [
+        {
+          "datasource": {"type": "loki", "uid": "loki"},
+          "gridPos": {"h": 18, "w": 24, "x": 0, "y": 0},
+          "id": 1,
+          "options": {
+            "dedupStrategy": "none",
+            "enableLogDetails": true,
+            "prettifyLogMessage": true,
+            "showCommonLabels": false,
+            "showLabels": false,
+            "showTime": true,
+            "sortOrder": "Ascending",
+            "wrapLogMessage": true
+          },
+          "targets": [
+            {
+              "datasource": {"type": "loki", "uid": "loki"},
+              "editorMode": "code",
+              "expr": "{namespace=\"inference\"} | label_format app=\"{{ if hasPrefix \\\"llmd-epp-\\\" .pod }}llmd-epp{{ else }}{{ .app }}{{ end }}\" | app=~\"$component\" |~ \"$request_id\"",
+              "queryType": "range",
+              "refId": "A"
+            }
+          ],
+          "title": "Request flow",
+          "type": "logs"
+        }
+      ],
+      "refresh": "5s",
+      "schemaVersion": 41,
+      "tags": ["inference", "logs"],
+      "templating": {
+        "list": [
+          {
+            "current": {"text": ".*", "value": ".*"},
+            "label": "Request ID",
+            "name": "request_id",
+            "options": [{"selected": true, "text": ".*", "value": ".*"}],
+            "query": ".*",
+            "type": "textbox"
+          },
+          {
+            "current": {"text": "All", "value": ".*"},
+            "includeAll": true,
+            "label": "Component",
+            "multi": true,
+            "name": "component",
+            "options": [],
+            "query": "inference-gateway,llmd-epp,mock-vllm,kv-cache",
+            "type": "custom"
+          }
+        ]
+      },
+      "time": {"from": "now-15m", "to": "now"},
+      "timezone": "browser",
+      "title": "Inference request logs",
+      "uid": "inference-request-logs",
+      "version": 1
+    }
